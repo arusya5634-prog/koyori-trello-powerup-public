@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>こより｜ボール表示 Power-Up</title>
+</head>
+<body>
+  <p>こより｜ボール表示 Power-Up の接続ページです。</p>
+  <p>このページにカードの情報は表示・保存されません。</p>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+  <script src="./view/task-projection-core.js?v=20261025-owner-sync"></script>
+  <script src="./view/top-summary-core.js?v=20261025-semantic-compact-v3"></script>
+  <script src="./view/checklist-due-core.js?v=20261025-item-dates-v1"></script>
+  <script>
+    'use strict';
+
+    // The ball value lives only in the Trello card's description.
+    // Example (not a real person's name): ボール: 担当者A
+    // No API keys, tokens, custom fields, or external services required.
+    function readBall(description) {
+      // Use the identical source and last-record rule as the inline task details.
+      // One authoritative description parser avoids contradictory UI sections.
+      const parser=window.KoyoriTaskProjectionCore;
+      if(!parser||typeof parser.parse!=='function'||typeof description!=='string')
+        return null;
+      const data=parser.parse(description);
+      return data.ball||null;
+    }
+
+    function badgeFor(description) {
+      const ball = readBall(description);
+      if (!ball) return [];
+      const chars = Array.from(ball);
+      const shortBall = chars.length > 12
+        ? chars.slice(0, 11).join('') + '…'
+        : ball;
+      return [{ text: '👤 ' + shortBall, color: 'light-gray' }];
+    }
+
+
+    // Priority editor v0.3. No extra app authorization or backend requests.
+    // Shared Power-Up data is Trello-managed and visible to board members.
+    const PRIORITIES = {
+      emergency: { label: '最優先', icon: '🚨', color: 'red' },
+      urgent: { label: '急ぎ', icon: '🔴', color: 'red' },
+      soon: { label: '早め', icon: '🟡', color: 'yellow' },
+      normal: { label: '通常', icon: '', color: 'light-gray' }
+    };
+    // Portable site: icon URLs follow the current connector host, not an old repo.
+    const baseUrl = new URL('./', window.location.href);
+    const iconDark = new URL('icons/priority-dark.svg', baseUrl).href;
+    const iconLight = new URL('icons/priority-light.svg', baseUrl).href;
+
+    function legacyPriority(cardName) {
+      if (/^🚨\s*/u.test(cardName || '')) return 'emergency';
+      if (/^🔴\s*/u.test(cardName || '')) return 'urgent';
+      if (/^🟡\s*/u.test(cardName || '')) return 'soon';
+      return 'normal';
+    }
+
+    function priorityBadgesFor(cardName, saved) {
+      // One visual language: card badges display the priority icon. Legacy
+      // title prefixes remain a temporary read fallback until their values
+      // have been copied into Power-Up data and the names are safely cleaned.
+      const effective = Object.prototype.hasOwnProperty.call(PRIORITIES, saved)
+        ? saved : legacyPriority(cardName);
+      if (effective === 'normal') return [];
+      return [{text: PRIORITIES[effective].icon, color: PRIORITIES[effective].color}];
+    }
+
+    function prioritySummary(cardName, saved) {
+      const exists = Object.prototype.hasOwnProperty.call(PRIORITIES, saved);
+      const key = exists ? saved : legacyPriority(cardName);
+      const p = PRIORITIES[key];
+      const icon = p.icon ? p.icon + ' ' : '';
+      return {
+        level: key,
+        source: exists ? '保存済み' : 'タイトルに準拠',
+        icon: icon,
+        label: p.label,
+        color: p.color
+      };
+    }
+
+    function readPriorityState(t) {
+      // Fail closed; do not describe a failed read as 'normal'.
+      return Promise.all([
+        t.card('name'),
+        t.get('card', 'shared', 'priority', null)
+      ]).then(function(values) {
+        return prioritySummary(values[0] && values[0].name, values[1]);
+      });
+    }
+
+    // Open the popup in the direct user-click context. Read current state in
+    // the iframe, where the selection remains visible before and after saving.
+    function prioritySelectPopup(t) {
+      return t.popup({
+        title: '優先度を変更',
+        url: './priority-select.html',
+        height: 250
+      });
+    }
+    function taskFieldsPopup(t) {
+      return t.popup({
+        title: 'タスク項目',
+        url: './card-fields.html',
+        height: 390
+      });
+    }
+    function checklistDuePopup(t) {
+      return t.popup({
+        title: 'チェック項目の期日',
+        url: './checklist-dates.html',
+        height: 500
+      });
+    }
+
+    // Each modal launch gets a distinct URL so old iframe HTML is not reused.
+    // Same static Power-Up, no new storage, permissions, or network services.
+    let modalLaunchCount=0;
+    function currentReviewUrl(entry){
+      modalLaunchCount+=1;
+      return './priority-review.html?entry='+entry+'&refresh='+Date.now()+'-'+modalLaunchCount;
+    }
+
+    window.TrelloPowerUp.initialize({
+      'card-badges': function(t) {
+        return Promise.all([
+          t.card('name', 'desc'),
+          t.get('card', 'shared', 'priority', null).catch(function() { return null; })
+        ])
+          .then(function(values) {
+            // Scan-friendly card order: priority first, then ball owner.
+            return priorityBadgesFor(values[0] && values[0].name, values[1])
+              .concat(badgeFor(values[0] && values[0].desc));
+          })
+          .catch(function() { return []; });
+      },
+      // Return card controls immediately instead of waiting for pluginData reads.
+      'card-buttons': function(t) {
+        return [{
+          icon: iconDark,
+          text: '優先度を変更',
+          condition: 'edit',
+          callback: prioritySelectPopup
+        },{
+          icon: iconDark,
+          text: 'タスク項目を見る',
+          callback: taskFieldsPopup
+        },{
+          icon: iconDark,
+          text: 'チェック項目の期日',
+          callback: checklistDuePopup
+        }];
+      },
+      // Optional inline card display. If this capability is not enabled in the
+      // Trello Power-Up admin screen, the card button above remains available.
+      'card-back-section': function(t) {
+        return {
+          title: 'タスク項目',
+          icon: iconDark,
+          content:{
+            type:'iframe',
+            url: t.signUrl('./card-fields.html'),
+            height: 340
+          },
+          action:{text:'詳細を確認',callback:taskFieldsPopup}
+        };
+      },
+      'card-detail-badges': function(t) {
+        // Compact badges appear above the description in Trello's card UI.
+        // The full, read-only details stay in the card-back-section below it.
+        // Independent read failures should never erase the priority badge.
+        return Promise.all([
+          readPriorityState(t).catch(function() { return null; }),
+          t.card('desc').catch(function() { return null; }),
+          t.card('checklists').catch(function() { return null; })
+        ]).then(function(values) {
+          const current=values[0],card=values[1];
+          const priority=current?{
+            title:'優先度',text:current.icon+current.label,color:current.color,
+            callback:prioritySelectPopup
+          }:{
+            title:'優先度',text:'読み込みエラー',color:'light-gray',
+            callback:prioritySelectPopup
+          };
+          const haveDesc=card && typeof card.desc==='string';
+          // Requested order: priority -> ball -> review date -> status -> next step.
+          // Trello controls responsive row wrapping; this API cannot force hard rows.
+          // Reuse the same description parser already used by the card-front ball badge.
+          const ball=haveDesc&&window.KoyoriTopSummaryCore?
+            window.KoyoriTopSummaryCore.ownerBadge(readBall(card.desc),taskFieldsPopup):[];
+          const badges=haveDesc&&window.KoyoriTopSummaryCore?
+            window.KoyoriTopSummaryCore.badges(card.desc,taskFieldsPopup):[];
+          const checklistData=values[2];
+          const core=window.KoyoriChecklistDueCore;
+          const today=new Date();
+          const localToday=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),
+            String(today.getDate()).padStart(2,'0')].join('-');
+          const due=(core&&checklistData&&Array.isArray(checklistData.checklists))?
+            core.nextDue(checklistData.checklists,localToday):null;
+          const dueBadge=due&&due.item?[{
+            title:'次のチェック項目期日',
+            text:'📅 項目 '+core.displayDate(due.item.date),
+            color:due.status==='past'?'red':'light-gray',
+            callback:checklistDuePopup
+          }]:[];
+          return [priority].concat(ball,badges,dueBadge);
+        });
+      },
+      'board-buttons': function(t) {
+        const icon={
+          dark:iconLight,
+          light:iconDark
+        };
+        return [
+          {icon,text:'今日の整理',condition:'edit',
+            callback:function(t){return t.modal({url:currentReviewUrl('focus'),title:'今日の整理',fullscreen:true});}},
+          {icon,text:'全体管理',condition:'edit',
+            callback:function(t){return t.modal({url:currentReviewUrl('analysis'),title:'全体管理・分析',fullscreen:true});}}
+        ];
+      }
+    });
+  </script>
+</body>
+</html>

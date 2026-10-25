@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>優先度を変更</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light dark}
+body{margin:0;padding:13px;color:#172b4d;background:white;font-size:13px}
+h2{margin:0 0 6px;font-size:15px}
+p{font-size:12px;color:#626f86;margin:0 0 10px}
+#current{font-weight:650;padding:8px;background:#f1f2f4;border-radius:5px;margin-bottom:10px}
+select,button{padding:8px;border:1px solid #8590a2;border-radius:5px;font-size:13px;background:white;color:#172b4d}
+select{width:100%}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+button{cursor:pointer}button:disabled,select:disabled{opacity:.55;cursor:not-allowed}
+#save{background:#0c66e4;border-color:#0c66e4;color:white}
+#message{font-size:11px;min-height:16px;margin-top:7px}
+#message.error{color:#ae2e24}
+@media(prefers-color-scheme:dark){
+body{background:#1d2125;color:#dee4ea}p{color:#9fadbc}
+select,button,#current{background:#282e33;color:#dee4ea;border-color:#626f86}
+#save{background:#579dff;border-color:#579dff;color:#1d2125}
+#message.error{color:#f87462}
+}
+</style>
+</head><body>
+<h2>優先度を変更</h2>
+<p>現在の優先度と保存状態を確認してから変更できます。</p>
+<div id="current">読み込み中…</div>
+<select id="choice" aria-label="優先度を選択" disabled>
+<option value="">読み込み中…</option>
+</select>
+<div class="actions">
+<button id="close" type="button">閉じる</button>
+<button id="save" type="button" disabled>保存する</button>
+</div>
+<div id="message" role="status" aria-live="polite"></div>
+<script src="https://p.trellocdn.com/power-up.min.js"></script>
+<script src="./view/priority-save-core.js"></script>
+<script>
+'use strict';
+const OPTIONS={
+ emergency:'🚨 最優先',urgent:'🔴 急ぎ',soon:'🟡 早め',normal:'通常'
+};
+const prioritySave=window.KoyoriPrioritySaveCore;
+const choice=document.getElementById('choice');
+const current=document.getElementById('current');
+const save=document.getElementById('save');
+const message=document.getElementById('message');
+const close=document.getElementById('close');
+let t=null,legacy='normal',selected=null,loaded=false,busy=false;
+function priorFromName(name){
+ if(/^🚨\s*/u.test(name||''))return 'emergency';
+ if(/^🔴\s*/u.test(name||''))return 'urgent';
+ if(/^🟡\s*/u.test(name||''))return 'soon';
+ return 'normal';
+}
+function label(key){return OPTIONS[key]||'不明';}
+function option(value,text){const x=document.createElement('option');x.value=value;x.textContent=text;return x;}
+function show(text,error){message.textContent=text;message.className=error?'error':'';}
+function render(){
+ const key=selected===null?legacy:selected;
+ current.textContent='現在：'+label(key)+(selected===null?'（タイトルに準拠）':'（保存済み）');
+ choice.replaceChildren(option('auto',(selected===null?'✓ ':'')+'タイトルに準拠（'+label(legacy)+'）'),
+  ...Object.entries(OPTIONS).map(([key,text])=>option(key,(selected===key?'✓ ':'')+text)));
+ choice.value=selected===null?'auto':selected;
+ choice.disabled=false;
+ save.disabled=false;
+ loaded=true;
+}
+async function init(){
+ try{
+  t=TrelloPowerUp.iframe();
+  const [card,raw]=await Promise.all([
+   t.card('name'),t.get('card','shared','priority',null)
+  ]);
+  if(raw!==null&&raw!==undefined&&!Object.prototype.hasOwnProperty.call(OPTIONS,raw)){
+    throw Error('unexpected stored priority');
+  }
+  legacy=priorFromName(card&&card.name);
+  selected=Object.prototype.hasOwnProperty.call(OPTIONS,raw)?raw:null;
+  render();
+  show('変更する場合だけ「保存する」を押してください。');
+ }catch(e){
+  current.textContent='優先度を読み取れません';
+  choice.disabled=true;save.disabled=true;show('読み込みに失敗しました。カードを再度開いてください。',true);
+ }
+}
+async function update(){
+ if(!t||!loaded||busy)return;
+ const raw=choice.value;
+ if(raw!=='auto'&&!Object.prototype.hasOwnProperty.call(OPTIONS,raw))return;
+ const proposed=raw==='auto'?null:raw;
+ if(proposed===selected){show('変更なし。現在の設定を維持しています。');return;}
+ busy=true;choice.disabled=true;save.disabled=true;show('保存中…');
+ try{
+  const result=await prioritySave.save(t,'card',selected,proposed);
+  if(Object.prototype.hasOwnProperty.call(result,'value'))selected=result.value;
+  if(result.status==='saved'||result.status==='unchanged'){
+   render();
+   show('保存と再読み取りが成功しました。ボードに戻ると表示が更新されます。');
+  }else if(result.status==='conflict'){
+   render();
+   show('別画面で優先度が変更されています。現在の値を読み直しました。必要なら選び直してください。',true);
+  }else if(result.status==='write-failed'){
+   render();
+   show('書き込めませんでした。元の値が維持されていることを確認しました。',true);
+  }else{
+   loaded=false;
+   show('保存の結果を確認できません。再度開いて現在値を確認してください。',true);
+  }
+ }catch(e){
+  loaded=false;
+  show('保存状態が不明です。再試行せず、画面を開き直してください。',true);
+ }finally{busy=false;choice.disabled=!loaded;save.disabled=!loaded;}
+}
+choice.addEventListener('change',()=>{show('現在：'+label(selected===null?legacy:selected)+'。変更を確定するには「保存する」を押してください。');});
+save.addEventListener('click',update);
+close.addEventListener('click',()=>{if(t&&!busy)return t.closePopup();});
+init();
+</script></body></html>

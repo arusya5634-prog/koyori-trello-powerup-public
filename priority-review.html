@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>こより｜優先度管理</title>
+<style>
+:root{font-family:system-ui,"Segoe UI",sans-serif;color-scheme:light dark}
+body{margin:0 auto;max-width:1100px;box-sizing:border-box;padding:18px;color:#172b4d;background:#fff}
+h1{font-size:18px;margin:0 0 5px}
+p{font-size:12px;color:#626f86;margin:0 0 14px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px}
+.stat{padding:10px 3px;border:1px solid #dfe1e6;border-radius:8px;background:#f1f2f4;color:inherit;font:inherit;cursor:pointer}
+.stat[aria-pressed="true"]{outline:2px solid #0c66e4}
+.stat strong{display:block;font-size:22px}.stat span{font-size:11px}
+.controls{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+input,select{padding:8px;border:1px solid #b6c2cf;border-radius:4px;background:inherit;color:inherit;font-size:13px;min-width:0}
+.controls input{flex:1}.controls select{max-width:42%}
+#results{max-height:none;overflow:visible}
+.item{display:flex;gap:8px;padding:8px 3px;align-items:center;border-bottom:1px solid #dfe1e6}
+.marker{width:20px;flex:none;text-align:center}.main{min-width:0;flex:1}
+a{font-size:13px;font-weight:600;text-decoration:none;color:inherit}
+a:hover{text-decoration:underline}
+.meta{font-size:11px;color:#626f86;margin-top:2px}
+.editor{width:122px;max-width:38%;padding:6px 4px;font-size:12px}
+.empty{font-size:13px;color:#626f86;padding:25px 10px;text-align:center}
+footer{font-size:11px;color:#626f86;margin-top:10px}
+#warn{font-size:12px;padding:5px 0;min-height:18px}
+#warn.error{color:#ae2e24}
+.migration-box{border:1px solid #b8d6fa;border-radius:8px;background:#e9f2ff;padding:10px;margin-bottom:12px;font-size:12px}
+.migration-box button{font:inherit;border:1px solid #0c66e4;background:#0c66e4;color:white;border-radius:5px;padding:8px 10px;cursor:pointer;margin-top:7px}
+.migration-box button:disabled{opacity:.55;cursor:not-allowed}
+.migration-box .meta{margin-top:5px}
+.migration-box .error{color:#ae2e24}
+@media(prefers-color-scheme:dark){
+body{background:#1d2125;color:#dee4ea}
+p,.meta,footer,.empty{color:#9fadbc}
+.stat{background:#282e33;border-color:#454f59}
+input,select{background:#282e33;border-color:#626f86}
+.item{border-color:#454f59}
+#warn.error{color:#f87462}
+.migration-box{background:#243c54;border-color:#456c90}
+.migration-box .error{color:#f87462}
+}
+
+/* Separate purposes with full-width views and natural page scrolling. */
+.mode-nav[hidden]{display:none}
+.mode-nav button[hidden]{display:none}
+.mode-nav{display:flex;gap:5px;margin:10px 0;padding:4px;background:#f1f2f4;border-radius:7px}
+.mode-nav button{flex:1;border:0;border-radius:4px;background:transparent;color:inherit;padding:8px 3px;font-weight:600;font-size:12px;cursor:pointer}
+.mode-nav button[aria-selected="true"]{background:white;box-shadow:0 1px 3px #091e4224}
+.daily-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:7px 0 14px}
+.daily-overview button{padding:9px 2px;background:#e9f2ff;border:1px solid #b8d6fa;border-radius:7px;color:#173a65;cursor:pointer;font:inherit}
+.daily-overview button strong{display:block;font-size:18px}.daily-overview button span{font-size:10px}
+.daily-overview[hidden]{display:none}
+#daily-data-note{font-size:12px;color:#ae2e24;margin:-7px 0 10px}
+section[hidden]{display:none}
+.review-header{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:7px;align-items:center;margin:12px 0;font-size:12px}
+.review-header input{grid-column:1/-1;width:100%;box-sizing:border-box}
+.review-header select{width:100%;min-width:0}
+.review-header button{padding:8px 10px;border:1px solid #b6c2cf;border-radius:4px;background:inherit;color:inherit;cursor:pointer}
+.review-row{padding:8px 5px;border-bottom:1px solid #dfe1e6}
+.review-row a{font-weight:600;text-decoration:none;color:inherit;font-size:13px}
+.review-row a:hover{text-decoration:underline}
+.review-row .meta{line-height:1.6}
+.review-chip{float:right;font-size:11px;padding:2px 6px;background:#f1f2f4;border-radius:4px}
+#review-results{max-height:none;overflow:visible}
+.focus-header{padding:10px 12px;margin:3px 0 10px;background:#e9f2ff;border:1px solid #b8d6fa;border-radius:8px;font-size:12px;line-height:1.7}
+.focus-review-entry{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.focus-review-entry button{padding:7px 11px;border:1px solid #0c66e4;border-radius:6px;background:#fff;color:#0c66e4;font:inherit;cursor:pointer;flex:none}
+.focus-review-entry button:hover{background:#deebff}
+@media(prefers-color-scheme:dark){.focus-review-entry button{background:#282e33;color:#85b8ff;border-color:#85b8ff}.focus-review-entry button:hover{background:#243c54}}
+.focus-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:10px 0}
+.focus-choices button{padding:9px 2px;background:#f1f2f4;border:1px solid #dfe1e6;border-radius:6px;cursor:pointer;color:inherit;font:inherit;font-size:11px}
+.focus-choices button[aria-pressed="true"]{border-color:#0c66e4;background:#e9f2ff;outline:1px solid #0c66e4}
+.focus-choices strong{display:block;font-size:17px}
+.focus-toolbar{display:flex;gap:8px;margin:8px 0;align-items:center}
+.focus-toolbar input{flex:1;width:100%;box-sizing:border-box}
+.focus-toolbar button{padding:8px 10px;border:1px solid #b6c2cf;background:inherit;color:inherit;border-radius:4px;cursor:pointer}
+.focus-toolbar button[aria-pressed="true"]{outline:2px solid #0c66e4}
+.focus-status{font-size:12px;line-height:1.6;margin:3px 0 2px;overflow-wrap:anywhere}
+#focus-results{max-height:none;overflow:visible}
+.focus-row{padding:9px 5px;border-bottom:1px solid #dfe1e6}
+.focus-row-top{display:flex;gap:7px;align-items:flex-start}
+.focus-priority{width:21px;flex:none;text-align:center}
+.focus-title{flex:1;min-width:0}
+.focus-step{font-size:12px;line-height:1.6;margin:5px 0 2px;overflow-wrap:anywhere}
+.focus-caution{font-size:11px;color:#9f6600}
+.weekly-review button{margin-top:12px;padding:9px 12px;border:1px solid #0c66e4;border-radius:6px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:13px}
+.weekly-review{padding:15px 16px}
+.weekly-review-title{font-size:16px;font-weight:700;line-height:1.5}
+.weekly-review-subtitle{font-size:12px;margin:6px 0 13px;color:#44546f}
+.weekly-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.weekly-card{background:#fff;border:1px solid #b6c2cf;border-left:4px solid #0c66e4;border-radius:8px;padding:12px 13px;min-width:0}
+.weekly-card-head{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.weekly-card-title{font-size:15px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}
+.weekly-card-open{flex:none;font-size:12px;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+.weekly-card-action{font-size:14px;line-height:1.65;margin:9px 0;overflow-wrap:anywhere}
+.weekly-card-action-label{display:block;font-size:11px;font-weight:700;color:#44546f;margin-bottom:2px}
+.weekly-card-status{font-size:12px;line-height:1.6;color:#44546f;overflow-wrap:anywhere}
+.weekly-card-meta{margin-top:9px;color:#626f86;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+@media(max-width:720px){.weekly-cards{grid-template-columns:1fr}.weekly-card-head{flex-wrap:wrap}}
+@media(prefers-color-scheme:dark){.weekly-review-subtitle,.weekly-card-action-label,.weekly-card-status{color:#bac4d2}.weekly-card{background:#282e33;border-color:#526070;border-left-color:#85b8ff}.weekly-card-meta{color:#a7b0be}}
+.focus-row .meta{line-height:1.5}
+.focus-date-choices{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:7px 0 10px}
+.focus-date-choices button{padding:7px 2px;border:1px solid #b6c2cf;border-radius:6px;background:inherit;color:inherit;cursor:pointer;font:inherit;font-size:11px}
+.focus-date-choices button strong{display:block;font-size:15px}
+.focus-date-choices button[aria-pressed="true"]{border-color:#0c66e4;outline:1px solid #0c66e4}
+.invalid-review-warning{font-size:12px;line-height:1.6;border:1px solid #e2c052;background:#fff7db;color:#5c4400;padding:11px 12px;border-radius:8px;margin:8px 0}
+.invalid-review-warning a{display:inline-block;margin:5px 12px 0 0;text-decoration:underline;color:inherit;font-size:12px}
+.invalid-review-warning[hidden]{display:none}
+@media(prefers-color-scheme:dark){.invalid-review-warning{background:#473b20;border-color:#8f732e;color:#f5e1aa}}
+@media(max-width:500px){.mode-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.focus-choices,.focus-date-choices{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-color-scheme:dark){
+.mode-nav,.review-chip{background:#282e33}.mode-nav button[aria-selected="true"]{background:#454f59}
+.daily-overview button{background:#243c54;border-color:#456c90;color:#dee4ea}
+#daily-data-note{color:#f87462}
+.review-row{border-color:#454f59}
+.focus-header{background:#243c54;border-color:#456c90}
+.focus-choices button{background:#282e33;border-color:#454f59}
+.focus-choices button[aria-pressed="true"]{background:#243c54;border-color:#85b8ff}
+.focus-row{border-color:#454f59}.focus-caution{color:#eed26e}
+}
+</style>
+</head>
+<body>
+<h1 id="entry-title">こより｜今日の整理</h1>
+<nav class="mode-nav" id="entry-nav" aria-label="全体管理の表示切り替え" hidden>
+<button type="button" id="tab-focus" data-view="focus" aria-selected="false" hidden>今日</button>
+<button type="button" data-view="priority" aria-selected="false">優先度</button>
+<button type="button" data-view="action" aria-selected="false">アクション</button>
+<button type="button" data-view="project" aria-selected="false">プロジェクト</button>
+<button type="button" data-view="review" aria-selected="false">要確認</button>
+<button type="button" data-view="alert" aria-selected="false">注意</button>
+</nav>
+<div class="daily-overview" id="daily-overview" aria-label="今日の見直し" hidden>
+<button type="button" data-shortcut="self"><strong id="daily-self">—</strong><span>自分が動く</span></button>
+<button type="button" data-shortcut="waiting"><strong id="daily-waiting">—</strong><span>確認待ち</span></button>
+<button type="button" data-shortcut="unverified"><strong id="daily-unverified">—</strong><span>現況未確認</span></button>
+<button type="button" data-shortcut="attention"><strong id="daily-attention">—</strong><span>注意</span></button>
+</div>
+<div id="daily-data-note" role="status" hidden></div>
+<section id="focus-pane">
+<div class="focus-header focus-review-entry">
+  <span id="focus-description">朝の整理では「自分が次に動く」と「確認日が到来した確認待ち」をまとめて表示します。ここに出たからといって、今日中の完了を求めるものではありません。</span>
+  <button type="button" id="focus-open-review" title="Trelloデータの記載・ラベルに関する点検を開きます">記載チェック（要確認）</button>
+</div>
+<div id="invalid-review-warning" class="invalid-review-warning" role="status" hidden></div>
+<div class="focus-choices" role="group" aria-label="今日の見直し項目">
+<button type="button" data-focus="morning" aria-pressed="true"><strong id="focus-count-morning">—</strong>朝の整理</button>
+<button type="button" data-focus="self" aria-pressed="false"><strong id="focus-count-self">—</strong>自分が動く</button>
+<button type="button" data-focus="waiting" aria-pressed="false"><strong id="focus-count-waiting">—</strong>確認待ち</button>
+<button type="button" data-focus="undated" aria-pressed="false"><strong id="focus-count-undated">—</strong>日付なし</button>
+<button type="button" data-focus="thinking" aria-pressed="false"><strong id="focus-count-thinking">—</strong>考える</button>
+<button type="button" data-focus="unverified" aria-pressed="false"><strong id="focus-count-unverified">—</strong>現況未確認</button>
+</div>
+<div id="weekly-undated-tip" class="focus-header weekly-review" hidden>
+<div class="weekly-review-title">今週、状況を見直しておきたいカード</div>
+<div id="weekly-undated-summary" class="weekly-review-subtitle"></div>
+<div id="weekly-undated-cards" class="weekly-cards"></div>
+<button id="weekly-undated-open" type="button">日付なしの確認待ちをすべて見る</button>
+</div>
+<div class="focus-date-choices" role="group" aria-label="次回確認日の見直し">
+<button type="button" data-review-date="due" aria-pressed="false"><strong id="focus-date-due">—</strong>確認日到来</button>
+<button type="button" data-review-date="week" aria-pressed="false"><strong id="focus-date-week">—</strong>今週これから</button>
+<button type="button" data-review-date="none" aria-pressed="false"><strong id="focus-date-none">—</strong>日付未設定</button>
+<button type="button" data-review-date="all" aria-pressed="true"><strong id="focus-date-all">—</strong>すべて</button>
+</div>
+<div class="focus-toolbar">
+<input id="focus-search" type="search" placeholder="カード・次の一手・分類を検索" aria-label="今日の見直し検索">
+<button id="focus-missing" type="button" aria-pressed="false">情報未記載だけ（—）</button>
+<button id="focus-clear" type="button">クリア</button>
+</div>
+<div id="focus-count" class="meta" aria-live="polite">読み込み中…</div>
+<div id="focus-results" aria-live="polite"><div class="empty">カード情報の読み込み中…</div></div>
+<footer>現在地・次の一手・ボールはカード説明欄の明記された情報だけを表示します。「情報未記載」は記録がないという意味で、未着手や遅延を意味しません。次回確認日は正式な仕事の締切ではありません。</footer>
+</section>
+<section id="priority-pane" hidden>
+<p>右の選択欄からカードの優先度を変更できます。カード名・説明・ラベル・並び順は変更しません。</p>
+<div class="migration-box" id="migration-box" hidden>
+<strong>旧タイトルの優先度を引き継ぐ</strong>
+<div id="migration-count" class="meta"></div>
+<button id="migration-run" type="button" disabled>旧記号の優先度をPower-Upに保存・照合</button>
+<div id="migration-report" class="meta" role="status" aria-live="polite">この操作ではまだタイトルは変更しません。引継ぎが全件確認できた後、タイトルの記号を削除します。</div>
+</div>
+<div class="stats" role="group" aria-label="優先度絞り込み">
+<button class="stat" data-priority="urgent" aria-pressed="false"><strong id="count-urgent">—</strong><span>🚨🔴 急ぎ</span></button>
+<button class="stat" data-priority="soon" aria-pressed="false"><strong id="count-soon">—</strong><span>🟡 早め</span></button>
+<button class="stat" data-priority="normal" aria-pressed="false"><strong id="count-normal">—</strong><span>通常</span></button>
+<button class="stat" data-priority="all" aria-pressed="true"><strong id="count-all">—</strong><span>すべて</span></button>
+</div>
+<div class="controls">
+<input id="search" type="search" placeholder="カード名を検索" aria-label="カード名検索">
+<select id="list" aria-label="リスト選択"><option value="all">すべてのリスト</option></select>
+</div>
+<div id="warn" role="status" aria-live="polite"></div>
+<div id="results" aria-live="polite"><div class="empty">Trelloから読み込み中…</div></div>
+<footer>「タイトルに準拠」は従来の🚨🔴🟡を使います。別の優先度を選ぶとPower-Up内に保存され、カード表面に表示されます。タイトルとの不一致には⚠を付けます。</footer>
+</section>
+<section id="review-pane" hidden>
+<p id="review-description">Trello標準ラベルを利用する読み取り専用の横断ビューです。</p>
+<div class="review-header">
+<input id="review-search" type="search" placeholder="名前・説明・ラベル・リストを検索（AND）" aria-label="横断検索"/>
+<select id="review-list" aria-label="リストで絞る"><option value="all">すべてのリスト</option></select>
+<select id="review-kind" aria-label="分類で絞る"><option value="all">すべて</option></select>
+<button id="review-clear" type="button">クリア</button>
+</div>
+<div id="review-count" class="meta" aria-live="polite"></div>
+<div id="alert-summary" class="meta" hidden></div>
+<div id="review-results" aria-live="polite"><div class="empty">カード情報の読み込み中…</div></div>
+<footer>ラベルは変更しません。定常業務・一時休止はアクション未設定でも原則として要修正扱いにしません。</footer>
+</section>
+<script src="https://p.trellocdn.com/power-up.min.js"></script>
+<script src="./view/task-filter-core.js?v=20261025-card-view-v2"></script>
+<script src="./view/review-core.js?v=20261025-confirmation-variants"></script>
+<script src="./view/daily-focus-core.js?v=20261025-card-view-v2"></script>
+<script src="./view/next-review-core.js?v=20261025-invalid-date-v3"></script>
+<script src="./view/priority-save-core.js?v=20261025-card-view-v2"></script>
+<script src="./view/priority-migration-core.js?v=20261025-card-view-v2"></script>
+<script>
+'use strict';
+const LEVELS={
+ emergency:{mark:'🚨',name:'最優先'},
+ urgent:{mark:'🔴',name:'急ぎ'},
+ soon:{mark:'🟡',name:'早め'},
+ normal:{mark:'・',name:'通常'}
+};
+const ORDER={emergency:0,urgent:1,soon:2,normal:3};
+function legacyPriority(name){
+ if(/^🚨\s*/u.test(name))return 'emergency';
+ if(/^🔴\s*/u.test(name))return 'urgent';
+ if(/^🟡\s*/u.test(name))return 'soon';
+ return 'normal';
+}
+function effective(c){return Object.prototype.hasOwnProperty.call(LEVELS,c.saved)?c.saved:c.legacy;}
+function clean(name){return name.replace(/^(?:🚨|🔴|🟡)\s*/u,'');}
+const state={cards:[],priority:'all',search:'',list:'all',saving:new Set(),migrating:false};
+const reviewCore=window.KoyoriReviewCore;
+const focusCore=window.KoyoriDailyFocusCore;
+const reviewCalendar=window.KoyoriNextReviewCore;
+const prioritySave=window.KoyoriPrioritySaveCore;
+const priorityMigration=window.KoyoriPriorityMigrationCore;
+const ACTIONS=reviewCore.ACTIONS;
+const analysisEntry=/(?:^\?|&)entry=analysis(?:&|$)/u.test((window.location&&window.location.search)||'');
+const reviewState={view:analysisEntry?'priority':'focus',query:'',list:'all',kind:'all',loaded:false,loadError:false};
+const focusState={group:'morning',query:'',date:'all',missingOnly:false};
+const filterCore=window.KoyoriTaskFilterCore;
+
+const el=id=>document.getElementById(id);
+let t=null;
+function option(value,text){const n=document.createElement('option');n.value=value;n.textContent=text;return n;}
+function showMessage(text,error=false){el('warn').textContent=text;el('warn').className=error?'error':'';}
+function paint(){
+ const counts={urgent:0,soon:0,normal:0};
+ for(const c of state.cards){const k=effective(c);counts[k==='emergency'?'urgent':k]++;}
+ Object.keys(counts).forEach(k=>el('count-'+k).textContent=String(counts[k]));
+ el('count-all').textContent=String(state.cards.length);
+ document.querySelectorAll('.stat').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.priority===state.priority)));
+ const rows=state.cards.filter(c=>{
+  const p=effective(c);
+  return (state.priority==='all'||p===state.priority||(state.priority==='urgent'&&p==='emergency'))&&
+   (state.list==='all'||state.list===c.idList)&&c.name.toLocaleLowerCase().includes(state.search);
+ }).sort((a,b)=>ORDER[effective(a)]-ORDER[effective(b)]||a.order-b.order);
+ const list=el('results');list.replaceChildren();
+ if(!rows.length){const m=document.createElement('div');m.className='empty';m.textContent='該当するカードはありません';list.append(m);return;}
+ for(const c of rows){
+  const row=document.createElement('div');row.className='item';
+  const badge=document.createElement('span');badge.className='marker';
+  badge.textContent=LEVELS[effective(c)].mark;
+  const main=document.createElement('div');main.className='main';
+  const link=document.createElement('a');link.textContent=clean(c.name);
+  if(/^https:\/\/trello\.com\/c\/[A-Za-z0-9]+(?:\/|$)/.test(c.url||'')){link.href=c.url;link.target='_blank';link.rel='noopener noreferrer';}
+  const sub=document.createElement('div');sub.className='meta';
+  const conflict=c.saved!==null&&c.saved!==c.legacy&&c.legacy!=='normal';
+  sub.textContent=c.listName+(conflict?' · ⚠ タイトルと不一致':'')+
+   (c.readPending?' · 優先度を照合中':c.readError?' · 読み取り失敗':'');
+  main.append(link,sub);
+  const select=document.createElement('select');select.className='editor';
+  select.setAttribute('aria-label',clean(c.name)+' の優先度を変更');
+  select.append(option('auto','タイトルに準拠 ('+LEVELS[c.legacy].name+')'));
+  for(const key of Object.keys(LEVELS))select.append(option(key,LEVELS[key].mark+' '+LEVELS[key].name));
+  select.value=Object.prototype.hasOwnProperty.call(LEVELS,c.saved)?c.saved:'auto';
+  select.disabled=state.migrating||c.readPending||c.readError||state.saving.has(c.id);
+  select.addEventListener('change',()=>savePriority(c,select));
+  row.append(badge,main,select);
+  list.append(row);
+ }
+}
+async function savePriority(c,select){
+ if(!t||state.migrating||c.readPending||c.readError||state.saving.has(c.id))return;
+ const chosen=select.value;
+ const next=chosen==='auto'?null:chosen;
+ if(next===c.saved)return;
+ state.saving.add(c.id);select.disabled=true;
+ showMessage('保存して再取得中…');
+ try{
+  const result=await prioritySave.save(t,c.id,c.saved,next);
+  if(Object.prototype.hasOwnProperty.call(result,'value'))c.saved=result.value;
+  if(result.status==='saved')showMessage('保存後の再取得まで確認しました。カード表面はボードの再読込で更新されます。');
+  else if(result.status==='unchanged')showMessage('既に同じ優先度でした。');
+  else if(result.status==='conflict')showMessage('別画面で優先度が変更されています。現在の値に更新しました。必要なら選び直してください。',true);
+  else if(result.status==='write-failed')showMessage('書き込みできませんでした。再取得で元の優先度を確認しています。',true);
+  else{
+   c.readError=true;
+   showMessage('保存状態を安全に確認できません。重複変更を防ぐため編集を停止しました。画面を閉じて再度開いてください。',true);
+  }
+ }catch(e){
+  c.readError=true;
+  showMessage('保存状態が不明です。再試行せず、画面を閉じて開き直し現在値を確認してください。',true);
+ }
+ state.saving.delete(c.id);paint();paintOverview();paintFocus();paintMigration();
+}
+document.querySelectorAll('.stat').forEach(b=>b.addEventListener('click',()=>{state.priority=b.dataset.priority;paint();}));
+el('search').addEventListener('input',e=>{state.search=e.target.value.toLocaleLowerCase().trim();paint();});
+el('list').addEventListener('change',e=>{state.list=e.target.value;paint();});
+
+function paintMigration(){
+ if(!reviewState.loaded||reviewState.loadError)return;
+ const withPrefix=state.cards.filter(c=>c.legacy!=='normal');
+ el('migration-box').hidden=!withPrefix.length;
+ if(!withPrefix.length)return;
+ const copied=withPrefix.filter(c=>c.saved!==null&&!c.readPending&&!c.readError).length;
+ const pending=withPrefix.filter(c=>c.readPending||c.readError).length;
+ el('migration-count').textContent='旧タイトル：'+withPrefix.length+'件／優先度引継ぎ確認済み：'+copied+'件'+
+  (pending?'／未照合・取得失敗：'+pending+'件':'');
+ el('migration-run').disabled=state.migrating||state.cards.some(c=>c.readPending)||!t;
+}
+el('migration-run').addEventListener('click',async()=>{
+ if(!t||state.migrating||state.cards.some(c=>c.readPending))return;
+ state.migrating=true;paint();paintMigration();
+ const status=el('migration-report');status.className='meta';
+ status.textContent='旧記号の優先度を一件ずつ照合中。タイトルは変更していません…';
+ try{
+  const report=await priorityMigration.migrate(t,state.cards,prioritySave,progress=>{
+   status.textContent='照合済み：'+(progress.created+progress.existing+progress.conflicts+progress.failed)+'/'+progress.total+'件';
+  });
+  if(report.canRename){
+   status.textContent='引継ぎ確認：'+report.ready+'/'+report.total+'件（新規保存：'+report.created+
+    '、既存設定：'+report.existing+'）。'+(report.disagreements?'旧タイトルと保存値が異なるカード：'+report.disagreements+'件。保存値を優先します。':'')+
+    ' タイトルはまだ未変更。こよりに「優先度引継ぎ完了」と伝えてね。';
+  }else{
+   status.className='meta error';
+   status.textContent='引継ぎを中断：競合'+report.conflicts+'件／取得・保存失敗'+report.failed+
+    '件。タイトルは変更しないでください。こよりへこの件数を伝えてね。';
+  }
+ }catch(e){
+  status.className='meta error';
+  status.textContent='照合の結果が不明です。タイトルは変更せず、画面を開き直して状態を確認してください。';
+ }finally{
+  state.migrating=false;paint();paintOverview();paintFocus();paintMigration();
+ }
+});
+
+const deriveReview=c=>reviewCore.derive(c);
+const deriveAlerts=(c,clock=Date.now())=>reviewCore.alerts(c,effective(c),clock);
+function paintFocus(){
+ if(!reviewState.loaded)return;
+ const results=el('focus-results');results.replaceChildren();
+ if(reviewState.loadError){
+  el('weekly-undated-tip').hidden=true;
+  el('invalid-review-warning').hidden=true;
+  el('focus-count').textContent='カード取得失敗';
+  const fail=document.createElement('div');fail.className='empty';
+  fail.textContent='カード情報を取得できません。ボードを再読み込みしてください。';
+  results.append(fail);return;
+ }
+ const today=reviewCalendar.todayLocal(new Date());
+ for(const group of ['morning','self','waiting','undated','thinking','unverified']){
+  const items=group==='morning'?focusCore.morning(state.cards,reviewCore,reviewCalendar,today):
+   group==='undated'?focusCore.undatedWaiting(state.cards,reviewCore,reviewCalendar):
+   focusCore.collect(state.cards,reviewCore,group);
+  el('focus-count-'+group).textContent=String(items.length);
+ }
+ document.querySelectorAll('[data-focus]').forEach(b=>
+  b.setAttribute('aria-pressed',String(b.dataset.focus===focusState.group)));
+ el('focus-description').textContent=focusState.group==='morning'?
+  '朝の整理：自分が次に動くカードと、次回確認日が到来した確認待ちカードを一緒に表示します。仕事の期限や今日の実施を推測しません。':
+  focusState.group==='undated'?
+  '確認日を設定していない「次に確認する」カードを一覧します。期限切れ・催促が必要という意味ではありません。':
+  '見直し対象をアクション別に表示します。確認日は正式な期限ではありません。休止カードは除外します。';
+ // Invalid follow-up dates must never silently disappear from the morning view.
+ // They are not overdue; keep them separate from cards with no review date.
+ const invalidCards=state.cards.filter(c=>{
+  const review=reviewCore.derive(c);
+  return !review.paused&&!review.dataMissing&&reviewCalendar.inspect(c.desc).invalid;
+ });
+ const warning=el('invalid-review-warning');
+ warning.hidden=focusState.group!=='morning'||!invalidCards.length;
+ warning.replaceChildren();
+ if(!warning.hidden){
+  const heading=document.createElement('strong');
+  heading.textContent='⚠ 次回確認日の記載を確認：'+invalidCards.length+'件';
+  const explanation=document.createElement('div');
+  explanation.textContent='日付の表記が読み取れないか、複数の異なる日付があります。期限超過・実施遅延とは判定しません。';
+  const links=document.createElement('div');
+  for(const c of invalidCards){
+   const safe=/^https:\/\/trello\.com\/c\/[A-Za-z0-9]+(?:\/|$)/u.test(c.url||'');
+   const link=document.createElement(safe?'a':'span');
+   link.textContent=clean(c.name);
+   if(safe){link.href=c.url;link.target='_blank';link.rel='noopener noreferrer';}
+   links.append(link);
+  }
+  warning.append(heading,explanation,links);
+ }
+ const undated=focusCore.undatedWaiting(state.cards,reviewCore,reviewCalendar);
+ const spotlight=focusCore.weeklyUndated(state.cards,reviewCore,reviewCalendar,today,4);
+ el('weekly-undated-tip').hidden=focusState.group!=='morning'||!undated.length;
+ el('weekly-undated-summary').textContent=undated.length?
+  '確認日なし'+undated.length+'件から、今週は'+spotlight.length+'件を表示。毎週候補が入れ替わります。期限や催促の指示ではありません。':'';
+ const weeklyCards=el('weekly-undated-cards');
+ weeklyCards.replaceChildren();
+ for(const item of spotlight){
+  const c=item.card;
+  const article=document.createElement('article');article.className='weekly-card';
+  const head=document.createElement('div');head.className='weekly-card-head';
+  const title=document.createElement('div');title.className='weekly-card-title';
+  const safeUrl=typeof c.url==='string'&&c.url.startsWith('https://trello.com/c/');
+  const cardLink=document.createElement(safeUrl?'a':'span');cardLink.textContent=clean(c.name);
+  if(safeUrl){
+   cardLink.href=c.url;cardLink.target='_blank';cardLink.rel='noopener noreferrer';
+   const open=document.createElement('a');open.className='weekly-card-open';
+   open.href=c.url;open.target='_blank';open.rel='noopener noreferrer';open.textContent='カードを開く ↗';
+   head.append(title,open);
+  }else head.append(title);
+  title.append(cardLink);
+  const action=document.createElement('div');action.className='weekly-card-action';
+  const actionLabel=document.createElement('span');actionLabel.className='weekly-card-action-label';actionLabel.textContent='次の一手';
+  const actionText=document.createElement('div');actionText.textContent=item.step||'個別の行動は未記載（カードで確認）';
+  action.append(actionLabel,actionText);
+  const current=document.createElement('div');current.className='weekly-card-status';
+  current.textContent='現在地：'+(item.status||'未記載');
+  const meta=document.createElement('div');meta.className='weekly-card-meta';
+  meta.textContent=[item.review.project.join('・')||'案件分類未設定',item.ball?'ボール：'+item.ball:'ボール：未記載',
+   item.priority===null?'優先度：未照合':'優先度：'+LEVELS[item.priority].name].join(' ／ ');
+  article.append(head,action,current,meta);weeklyCards.append(article);
+ }
+ const all=focusState.group==='morning'?
+  focusCore.morning(state.cards,reviewCore,reviewCalendar,today):
+  focusState.group==='undated'?undated:
+  focusCore.collect(state.cards,reviewCore,focusState.group);
+ for(const filter of ['due','week','none','all'])el('focus-date-'+filter).textContent=String(all.filter(({card})=>reviewCalendar.included(card.desc,filter,today)).length);
+ document.querySelectorAll('[data-review-date]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.reviewDate===focusState.date)));
+ const dateEntries=all.filter(({card})=>reviewCalendar.included(card.desc,focusState.date,today));
+ const incomplete=dateEntries.filter(({missingInfo})=>missingInfo).length;
+ el('focus-missing').textContent='情報未記載だけ（'+incomplete+'）';
+ el('focus-missing').setAttribute('aria-pressed',String(focusState.missingOnly));
+ const entries=dateEntries.filter(({card,missingInfo})=>
+  filterCore.matches(card,{query:focusState.query})&&(!focusState.missingOnly||missingInfo));
+ const missingPriority=all.filter(({priority})=>priority===null).length;
+ el('focus-count').textContent='表示：'+entries.length+'件／アクション該当：'+all.length+'件'+
+  (missingPriority?'（優先度未照合：'+missingPriority+'件）':'');
+ if(!entries.length){
+  const empty=document.createElement('div');empty.className='empty';
+  empty.textContent=focusState.missingOnly&&!incomplete?'現在地と次の一手の未記載カードはありません':
+   focusState.query&&dateEntries.length?'検索に一致するカードはありません':'該当するカードはありません';
+  results.append(empty);return;
+ }
+ for(const {card,review,step,stepProposal,status,ball,missingInfo,priority} of entries){
+  const row=document.createElement('div');row.className='focus-row';
+  const top=document.createElement('div');top.className='focus-row-top';
+  const marker=document.createElement('span');marker.className='focus-priority';
+  marker.textContent=priority===null?'？':LEVELS[priority].mark;
+  const title=document.createElement('div');title.className='focus-title';
+  const link=document.createElement('a');link.textContent=clean(card.name);
+  if(/^https:\/\/trello\.com\/c\/[A-Za-z0-9]+(?:\/|$)/.test(card.url||'')){
+   link.href=card.url;link.target='_blank';link.rel='noopener noreferrer';
+  }
+  const meta=document.createElement('div');meta.className='meta';
+  meta.textContent=(focusState.group==='morning'?
+    ((review.action.includes('自分が次に動く'))?'自分が次に動く':'次回確認日が到来')+' / ':'')+
+    card.listName+' / '+(review.project.join('・')||'分類未設定')+
+    (ball?' / ボール：'+ball:'');
+  title.append(link,meta);top.append(marker,title);
+  const action=document.createElement('div');action.className='focus-step';
+  action.textContent=step?(stepProposal?'次の一手（整理案）：':'次の一手：')+step:
+   '次の一手：未記載';
+  row.append(top,action);
+  const current=document.createElement('div');current.className='focus-status';
+  current.textContent='現在地：'+(status||'未記載');
+  row.append(current);
+  const dateInfo=reviewCalendar.inspect(card.desc);
+  const dateStatus=reviewCalendar.bucket(card.desc,today);
+  const followup=document.createElement('div');followup.className='meta';
+  followup.textContent=dateInfo.invalid?'次回確認日：記載形式を確認してください':dateInfo.date?'次回確認日：'+dateInfo.date+(dateStatus==='due'?'（確認日到来・実施状況は未判定）':''):'次回確認日：未設定';
+  row.append(followup);
+  const notes=[];
+  if(review.unverified)notes.push('⚠ 現況未確認（整理案の可能性）');
+  if(missingInfo)notes.push('現在地・次の一手に未記載あり（進捗遅延ではない）');
+  if(review.confirmedLater)notes.push('本人確認の記録あり（完了判定ではない）');
+  if(dateInfo.invalid)notes.push('確認日の記載が不正または競合');
+  if(review.dataMissing)notes.push('情報取得不足');
+  if(priority===null)notes.push(card.readError?'優先度取得失敗':'優先度照合中');
+  if(review.manyActions)notes.push('アクション重複');
+  if(notes.length){
+   const caution=document.createElement('div');caution.className='focus-caution';
+   caution.textContent=notes.join(' / ');row.append(caution);
+  }
+  results.append(row);
+ }
+}
+document.querySelectorAll('[data-focus]').forEach(b=>b.addEventListener('click',()=>{
+ focusState.group=b.dataset.focus;focusState.date=focusState.group==='undated'?'none':'all';
+ focusState.missingOnly=false;paintFocus();
+}));
+el('weekly-undated-open').addEventListener('click',()=>{
+ focusState.group='undated';focusState.date='none';focusState.missingOnly=false;
+ focusState.query='';el('focus-search').value='';paintFocus();
+});
+el('focus-missing').addEventListener('click',()=>{
+ focusState.missingOnly=!focusState.missingOnly;paintFocus();
+});
+document.querySelectorAll('[data-review-date]').forEach(b=>b.addEventListener('click',()=>{
+ focusState.date=b.dataset.reviewDate;paintFocus();
+}));
+el('focus-search').addEventListener('input',e=>{
+ focusState.query=e.target.value.trim();paintFocus();
+});
+el('focus-clear').addEventListener('click',()=>{
+ focusState.query='';focusState.missingOnly=false;
+ el('focus-search').value='';paintFocus();
+});
+function paintOverview(){
+ if(!reviewState.loaded||reviewState.loadError)return;
+ const active=state.cards.filter(c=>!deriveReview(c).paused);
+ el('daily-self').textContent=String(active.filter(c=>deriveReview(c).action.includes('自分が次に動く')).length);
+ el('daily-waiting').textContent=String(active.filter(c=>deriveReview(c).action.includes('次に確認する')).length);
+ el('daily-unverified').textContent=String(active.filter(c=>deriveReview(c).unverified).length);
+ el('daily-attention').textContent=String(active.filter(c=>deriveAlerts(c).length>0).length);
+ el('daily-overview').hidden=reviewState.view==='focus';
+ const unknown=active.filter(c=>deriveReview(c).dataMissing).length;
+ el('daily-data-note').hidden=!unknown;
+ if(unknown)el('daily-data-note').textContent=unknown+'件のカードで説明またはラベルが取得できず、一部の集計は判定できません。';
+}
+document.querySelectorAll('[data-shortcut]').forEach(b=>b.addEventListener('click',()=>{
+ const shortcut=b.dataset.shortcut;
+ const view=shortcut==='self'||shortcut==='waiting'?'action':shortcut==='unverified'?'review':'alert';
+ const kind=shortcut==='self'?'自分が次に動く':shortcut==='waiting'?'次に確認する':shortcut==='unverified'?'現況未確認':'all';
+ switchReview(view);
+ reviewState.query='';reviewState.list='all';reviewState.kind=kind;
+ el('review-search').value='';el('review-list').value='all';el('review-kind').value=kind;
+ paintReview();
+}));
+
+function reviewOptions(){
+ if(reviewState.view==='alert')return ['all','期限超過','72時間以内','ボール未設定','14日更新なし','急ぎ・期限未設定'];
+ if(reviewState.view==='action')return ['all',...ACTIONS,'未設定'];
+ if(reviewState.view==='project'){
+  return ['all',...new Set(state.cards.flatMap(c=>deriveReview(c).project).sort((a,b)=>a.localeCompare(b,'ja'))),'未設定'];
+ }
+ return ['all','現況未確認','アクション未設定','アクション重複','プロジェクト未設定','情報取得不足'];
+}
+function reviewFilter(c,r){
+ const kind=reviewState.kind;
+ if(reviewState.view==='alert'){
+  const reasons=deriveAlerts(c);
+  return reasons.length>0&&(kind==='all'||reasons.some(x=>x.name===kind));
+ }
+ if(reviewState.view==='action')return kind==='all'||(kind==='未設定'?!r.action.length&&!c.labelsMissing:r.action.includes(kind));
+ if(reviewState.view==='project')return kind==='all'||(kind==='未設定'?!r.project.length&&!c.labelsMissing:r.project.includes(kind));
+ if(!r.needs)return false;
+ return kind==='all'||(kind==='現況未確認'&&r.unverified)||
+  (kind==='アクション未設定'&&r.missingAction)||
+  (kind==='アクション重複'&&r.manyActions)||
+  (kind==='プロジェクト未設定'&&r.missingProject)||
+  (kind==='情報取得不足'&&r.dataMissing);
+}
+function paintReview(){
+ if(!reviewState.loaded||reviewState.view==='priority'||reviewState.view==='focus')return;
+ const results=el('review-results');results.replaceChildren();
+ if(reviewState.loadError){
+  el('review-count').textContent='カード取得失敗';
+  const fail=document.createElement('div');fail.className='empty';
+  fail.textContent='カードを取得できません。閉じて再度開くか、ボードを再読み込みしてください。';
+  results.append(fail);return;
+ }
+ const filtered=state.cards.map(c=>({c,r:deriveReview(c)})).filter(({c,r})=>
+  filterCore.matches(c,{query:reviewState.query,list:reviewState.list})&&reviewFilter(c,r));
+ el('review-count').textContent='該当：'+filtered.length+'件／全'+state.cards.length+'件';
+ const alertBox=el('alert-summary');
+ alertBox.hidden=reviewState.view!=='alert';
+ if(reviewState.view==='alert'){
+  const active=c=>!deriveReview(c).paused;
+  const dueMissing=state.cards.filter(c=>active(c)&&!c.due).length;
+  const lastMissing=state.cards.filter(c=>active(c)&&!c.lastActivity).length;
+  const unread=state.cards.filter(c=>c.readError).length;
+  alertBox.textContent='期限未設定：'+dueMissing+'件／活動日時未取得：'+lastMissing+'件'+
+    (unread?'／優先度取得失敗：'+unread+'件':'')+
+    '。更新日時は進捗の証明ではありません。';
+ }
+ if(!filtered.length){
+  const empty=document.createElement('div');empty.className='empty';
+  empty.textContent='該当カードはありません';results.append(empty);return;
+ }
+ for(const {c,r} of filtered){
+  const wrap=document.createElement('div');wrap.className='review-row';
+  const heading=document.createElement('div');
+  const link=document.createElement('a');link.textContent=c.name;
+  if(/^https:\/\/trello\.com\/c\/[A-Za-z0-9]+(?:\/|$)/.test(c.url||'')){
+   link.href=c.url;link.target='_blank';link.rel='noopener noreferrer';
+  }
+  const chip=document.createElement('span');chip.className='review-chip';
+  if(reviewState.view==='alert')chip.textContent=deriveAlerts(c).map(x=>x.name).join('・');
+  else if(reviewState.view==='action')chip.textContent=c.labelsMissing?'取得不足':r.action.join('・')||'未設定';
+  else if(reviewState.view==='project')chip.textContent=c.labelsMissing?'取得不足':r.project.join('・')||'未設定';
+  else chip.textContent=r.dataMissing?'取得不足':r.unverified?'現況未確認':'要確認';
+  heading.append(link,chip);
+  const meta=document.createElement('div');meta.className='meta';
+  if(reviewState.view==='alert')meta.textContent=c.listName+' / 期限・更新はTrello記録から判定';
+  else if(reviewState.view==='action')meta.textContent=c.listName+' / 分類：'+(r.project.join('・')||'未設定')+(r.routine?' / 定常':'');
+  else if(reviewState.view==='project')meta.textContent=c.listName+' / アクション：'+(r.action.join('・')||'未設定');
+  else meta.textContent=c.listName+' / '+[
+    r.missingAction?'アクション未設定':'',r.manyActions?'アクション重複':'',
+    r.missingProject?'分類未設定':'',r.unverified?'実施状況未確認':'',
+    r.dataMissing?'説明またはラベル取得不足':''].filter(Boolean).join('・');
+  wrap.append(heading,meta);results.append(wrap);
+ }
+}
+function switchReview(view){
+ reviewState.view=view;
+ document.querySelectorAll('.mode-nav button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===view)));
+ el('focus-pane').hidden=view!=='focus';
+ el('priority-pane').hidden=view!=='priority';
+ el('review-pane').hidden=view==='priority'||view==='focus';
+ el('daily-overview').hidden=view==='focus'||!reviewState.loaded||reviewState.loadError;
+ if(view==='focus')paintFocus();
+ if(view!=='priority'&&view!=='focus'){
+  el('review-description').textContent=
+   view==='alert'?'期限・ボール・更新履歴・急ぎの期限設定を点検します。未設定のデータは判定不能として区別します。':
+   view==='action'?'次に誰が動くか、Trelloのアクションラベルで確認できます。':
+   view==='project'?'プロジェクト・業務分類のラベルを横断して表示します。':
+   '標準ラベルの重複・不足と、説明欄に明記された「実施状況未確認」を点検します。進捗遅延と断定せず、定常・保留も区別します。';
+  reviewState.kind='all';
+  el('review-kind').replaceChildren(...reviewOptions().map(x=>option(x,x==='all'?'すべて':x)));
+  el('review-kind').value='all';
+  paintReview();
+ }
+}
+document.querySelectorAll('.mode-nav button').forEach(b=>b.addEventListener('click',()=>{
+ switchReview(b.dataset.view);
+ if(!analysisEntry)el('entry-title').textContent=b.dataset.view==='focus'?'こより｜今日の整理':'こより｜全体管理・分析';
+}));
+el('focus-open-review').addEventListener('click',()=>{
+ // Keep a way back to the original focus view; do not open nested Trello modals.
+ el('entry-nav').hidden=false;
+ el('tab-focus').hidden=false;
+ el('entry-title').textContent='こより｜全体管理・分析';
+ switchReview('review');
+});
+el('entry-title').textContent=analysisEntry?'こより｜全体管理・分析':'こより｜今日の整理';
+el('entry-nav').hidden=!analysisEntry;
+el('tab-focus').hidden=true;
+switchReview(reviewState.view);
+el('review-search').addEventListener('input',e=>{reviewState.query=e.target.value.trim();paintReview();});
+el('review-list').addEventListener('change',e=>{reviewState.list=e.target.value;paintReview();});
+el('review-kind').addEventListener('change',e=>{reviewState.kind=e.target.value;paintReview();});
+el('review-clear').addEventListener('click',()=>{
+ reviewState.query='';reviewState.list='all';reviewState.kind='all';
+ el('review-search').value='';el('review-list').value='all';el('review-kind').value='all';
+ paintReview();
+});
+
+async function main(){
+ t=TrelloPowerUp.iframe();
+ try{
+  const [cards,lists]=await Promise.all([t.cards('id','name','url','idList','labels','due','dueComplete','dateLastActivity','desc'),t.lists('id','name')]);
+  const names=new Map(lists.map(l=>[l.id,l.name]));
+  state.cards=cards.map((c,i)=>({
+   id:c.id,name:String(c.name||''),idList:c.idList,url:c.url,
+   due:typeof c.due==='string'?c.due:null,dueComplete:c.dueComplete===true,
+   lastActivity:typeof c.dateLastActivity==='string'?c.dateLastActivity:null,
+   desc:typeof c.desc==='string'?c.desc:'',descMissing:typeof c.desc!=='string',
+   labels:(Array.isArray(c.labels)?c.labels:[]).map(x=>typeof x==='string'?x:x&&x.name).filter(x=>typeof x==='string'),
+   labelsMissing:!Array.isArray(c.labels),
+   legacy:legacyPriority(String(c.name||'')),saved:null,readPending:true,readError:false,order:i,
+   listName:names.get(c.idList)||'リスト未確認'
+  }));
+  lists.forEach(l=>el('list').append(option(l.id,l.name)));
+  lists.forEach(l=>el('review-list').append(option(l.id,l.name)));
+  // Show all read-only views as soon as card data arrives. Background priority
+  // reads must not block action/review search or expose premature editing.
+  reviewState.loaded=true;
+  paint();paintOverview();paintFocus();paintReview();paintMigration();
+  showMessage('カード情報を表示しました。優先度の保存値を照合中…');
+  const todo=state.cards.slice();
+  // Limit concurrent reads; never overwrite values we have not successfully read.
+  await Promise.all(Array.from({length:Math.min(5,todo.length)},async()=>{
+   while(todo.length){
+    const c=todo.shift();
+    try{
+     const saved=await t.get(c.id,'shared','priority',null);
+     c.readError=!prioritySave.valid(saved);
+     c.saved=c.readError?null:saved===undefined?null:saved;
+    }catch(e){c.readError=true;}
+    finally{c.readPending=false;}
+   }
+  }));
+  if(state.cards.some(c=>c.readError))showMessage('一部の優先度が読み取れませんでした。そのカードの変更は無効にしています。',true);
+  else showMessage('優先度の現在値まで確認しました。');
+  paint();paintMigration();
+  paintOverview();paintFocus();
+  paintReview();
+ }catch(e){
+  showMessage('Trelloからカードを取得できませんでした。ボードを再読み込みしてください。',true);
+  el('results').replaceChildren();
+  const fail=document.createElement('div');fail.className='empty';fail.textContent='カード取得失敗。再度開いてください。';
+  el('results').append(fail);
+  reviewState.loadError=true;reviewState.loaded=true;
+  paintReview();paintFocus();
+ }
+}
+main().catch(()=>showMessage('読み込みエラーが発生しました。',true));
+</script>
+</body>
+</html>
