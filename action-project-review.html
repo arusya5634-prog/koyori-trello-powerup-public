@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>こより｜アクション・分類の確認</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light dark}
+body{margin:0;background:#fff;color:#172b4d;padding:14px}
+h1{font-size:17px;margin:0 0 6px}p,.muted{font-size:12px;color:#626f86}
+p{margin:0 0 10px}
+nav{display:flex;gap:4px;padding:3px;border-radius:8px;background:#f1f2f4;margin:0 0 12px}
+nav button{flex:1;background:transparent;border:0;padding:9px 4px;border-radius:6px;color:inherit;font-weight:600;cursor:pointer;font-size:12px}
+nav button[aria-selected="true"]{background:#fff;box-shadow:0 1px 2px #091e4224}
+.metrics{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-bottom:9px}
+.metrics b{font-size:16px}
+.filters{display:flex;gap:6px;margin:8px 0}
+input,select{border:1px solid #b6c2cf;border-radius:5px;padding:7px;font-size:12px;min-width:0;background:inherit;color:inherit}
+.filters input{flex:1}.filters select{max-width:50%;flex:1}
+#results{max-height:355px;overflow:auto;border-top:1px solid #dfe1e6}
+.item{padding:9px 4px;border-bottom:1px solid #dfe1e6}
+.heading{display:flex;justify-content:space-between;gap:6px;align-items:start}
+a{color:inherit;text-decoration:none;font-weight:600;font-size:13px;min-width:0;overflow-wrap:anywhere}
+a:hover{text-decoration:underline}
+.tag{border-radius:4px;background:#f1f2f4;padding:2px 5px;font-size:11px;color:#44546f;white-space:nowrap}
+.meta{font-size:11px;color:#626f86;margin-top:4px}
+.info{margin-top:6px;font-size:12px}
+.warn{color:#b54708;font-size:11px;font-weight:600}
+.empty{padding:30px 8px;color:#626f86;text-align:center;font-size:13px}
+footer{color:#626f86;font-size:11px;line-height:1.6;margin-top:12px}
+@media(prefers-color-scheme:dark){
+body{background:#1d2125;color:#dee4ea}
+nav,.tag{background:#282e33;color:#c7d1db}nav button[aria-selected="true"]{background:#454f59}
+input,select{border-color:#626f86}
+#results,.item{border-color:#454f59}
+p,.muted,.meta,footer,.empty{color:#9fadbc}.warn{color:#f3cd63}
+}
+</style>
+</head><body>
+<h1>アクション・プロジェクト整理</h1>
+<p>標準ラベルを使った横断ビュー。カード名、ラベル、並び順は変更しません。</p>
+<nav role="tablist" aria-label="表示切り替え">
+<button data-tab="action" role="tab" aria-selected="true">アクション</button>
+<button data-tab="project" role="tab" aria-selected="false">プロジェクト</button>
+<button data-tab="review" role="tab" aria-selected="false">要確認</button>
+</nav>
+<div class="metrics" id="metrics" aria-live="polite"></div>
+<div class="filters">
+<input type="search" id="search" placeholder="カード名を検索" aria-label="カード名を検索">
+<select id="kind" aria-label="分類を選ぶ"><option value="all">すべて</option></select>
+<select id="list" aria-label="リストを選ぶ"><option value="all">全リスト</option></select>
+</div>
+<div id="results" aria-live="polite"><div class="empty">読み込み中…</div></div>
+<footer>ラベルを正式なデータとして使用します。「日次・定常」や一時休止のカードは、アクション未設定でも自動的に不備とは判断しません。分類値を勝手に補完しない安全な確認画面です。</footer>
+<script src="https://p.trellocdn.com/power-up.min.js"></script>
+<script>
+'use strict';
+const ACTIONS=['自分が次に動く','次に確認する','検討・構想'];
+const META=['日次・定常','保留'];
+const state={tab:'action',query:'',kind:'all',list:'all',cards:[],lists:[],ready:false};
+const el=id=>document.getElementById(id);
+const isAction=x=>ACTIONS.includes(x);
+const isMeta=x=>META.includes(x);
+function model(card,listNames,index){
+ const labels=(Array.isArray(card.labels)?card.labels:[]).map(x=>typeof x==='string'?x:x&&x.name).filter(x=>typeof x==='string'&&x.trim());
+ const action=labels.filter(isAction);
+ const project=labels.filter(x=>!isAction(x)&&!isMeta(x));
+ const routine=labels.includes('日次・定常');
+ const paused=labels.includes('保留')||/^90(?:\b|[｜\s])/u.test(listNames.get(card.idList)||'');
+ return {
+  name:String(card.name||''),url:card.url,idList:card.idList,
+  listName:listNames.get(card.idList)||'リスト不明',
+  action,project,routine,paused,order:index
+ };
+}
+function needsReview(c){
+ // Routine and parked cards are allowed not to have an active next-action mode.
+ const missingAction=!c.action.length&&!c.routine&&!c.paused;
+ const manyActions=c.action.length>1;
+ const noProject=!c.project.length&&!c.paused;
+ return {missingAction,manyActions,noProject,needs:missingAction||manyActions||noProject};
+}
+function filterValues(){
+ if(state.tab==='action')return ['all',...ACTIONS,'未設定'];
+ if(state.tab==='project')return ['all',...new Set(state.cards.flatMap(x=>x.project).sort((a,b)=>a.localeCompare(b,'ja'))),'未設定'];
+ return ['all','アクション未設定','アクション重複','プロジェクト未設定'];
+}
+function opt(value,caption){const n=document.createElement('option');n.value=value;n.textContent=caption;return n;}
+function resetFilters(){state.kind='all';el('kind').replaceChildren(...filterValues().map(x=>opt(x,x==='all'?'すべて':x)));el('kind').value='all';}
+function metric(label,value){
+ const item=document.createElement('span');
+ const b=document.createElement('b');b.textContent=String(value);
+ item.append(b,document.createTextNode(' '+label));return item;
+}
+function computeMetrics(){
+ const active=state.cards.filter(c=>!c.paused);
+ if(state.tab==='action'){
+  const counts=ACTIONS.map(x=>[x,active.filter(c=>c.action.includes(x)).length]);
+  return [...counts,['未設定',active.filter(c=>!c.action.length).length]];
+ }
+ if(state.tab==='project'){
+  const n=new Set(state.cards.flatMap(c=>c.project)).size;
+  return [['分類数',n],['複数分類',state.cards.filter(c=>c.project.length>1).length],['未設定',active.filter(c=>!c.project.length).length]];
+ }
+ return [['確認対象',active.filter(c=>needsReview(c).needs).length],
+  ['アクション不足',active.filter(c=>needsReview(c).missingAction).length],
+  ['アクション重複',active.filter(c=>needsReview(c).manyActions).length]];
+}
+function matches(c){
+ if(state.list!=='all'&&c.idList!==state.list)return false;
+ if(!c.name.toLocaleLowerCase().includes(state.query))return false;
+ if(state.tab==='action')return state.kind==='all'||(state.kind==='未設定'?!c.action.length:c.action.includes(state.kind));
+ if(state.tab==='project')return state.kind==='all'||(state.kind==='未設定'?!c.project.length:c.project.includes(state.kind));
+ const review=needsReview(c);
+ if(!review.needs||c.paused)return false;
+ return state.kind==='all'||(state.kind==='アクション未設定'&&review.missingAction)||
+ (state.kind==='アクション重複'&&review.manyActions)||
+ (state.kind==='プロジェクト未設定'&&review.noProject);
+}
+function paint(){
+ if(!state.ready)return;
+ el('metrics').replaceChildren(...computeMetrics().map(([key,count])=>metric(key,count)));
+ const visible=state.cards.filter(matches).sort((a,b)=>a.order-b.order);
+ const target=el('results');target.replaceChildren();
+ if(!visible.length){const e=document.createElement('div');e.className='empty';e.textContent='該当カードはありません';target.append(e);return;}
+ for(const c of visible){
+  const item=document.createElement('article');item.className='item';
+  const heading=document.createElement('div');heading.className='heading';
+  const link=document.createElement('a');link.textContent=c.name;
+  if(/^https:\/\/trello\.com\/c\/[A-Za-z0-9]+(?:\/|$)/.test(c.url||'')){link.href=c.url;link.target='_blank';link.rel='noopener noreferrer';}
+  const status=document.createElement('span');status.className='tag';
+  status.textContent=state.tab==='action'?(c.action.join(' / ')||'未設定'):
+    state.tab==='project'?(c.project.join(' / ')||'未設定'):'確認';
+  heading.append(link,status);
+  const sub=document.createElement('div');sub.className='meta';sub.textContent=c.listName;
+  item.append(heading,sub);
+  const detail=document.createElement('div');detail.className='info';
+  if(state.tab==='action')detail.textContent='プロジェクト: '+(c.project.join('・')||'未設定')+(c.routine?' / 定常':'');
+  else if(state.tab==='project')detail.textContent='アクション: '+(c.action.join('・')||'未設定')+(c.routine?' / 定常':'');
+  else{
+   const rev=needsReview(c);
+   detail.className+=' warn';
+   detail.textContent=[rev.missingAction?'アクション未設定':'',rev.manyActions?'アクション重複':'',rev.noProject?'プロジェクト未設定':''].filter(Boolean).join('・');
+  }
+  item.append(detail);target.append(item);
+ }
+}
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
+ state.tab=b.dataset.tab;
+ document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x===b)));
+ resetFilters();paint();
+}));
+el('search').addEventListener('input',e=>{state.query=e.target.value.toLocaleLowerCase().trim();paint();});
+el('kind').addEventListener('change',e=>{state.kind=e.target.value;paint();});
+el('list').addEventListener('change',e=>{state.list=e.target.value;paint();});
+async function main(){
+ try{
+  const t=TrelloPowerUp.iframe();
+  const [cards,lists]=await Promise.all([t.cards('id','name','url','idList','labels'),t.lists('id','name')]);
+  state.lists=lists;
+  const names=new Map(lists.map(l=>[l.id,l.name]));
+  state.cards=cards.map((c,i)=>model(c,names,i));
+  for(const l of lists)el('list').append(opt(l.id,l.name));
+  state.ready=true;resetFilters();paint();
+ }catch(e){
+  const target=el('results');target.replaceChildren();
+  const line=document.createElement('div');line.className='empty';
+  line.textContent='カード情報を読み取れませんでした。ボードを再読み込みしてください。';
+  target.append(line);
+ }
+}
+main();
+</script></body></html>
