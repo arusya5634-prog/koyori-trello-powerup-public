@@ -1,0 +1,42 @@
+(function(root){
+ 'use strict';
+ // Follow-up date only. Does not change Trello card due dates.
+ const ISO=/^\d{4}-\d{2}-\d{2}$/u;
+ function valid(s){
+  if(!ISO.test(s||''))return false;
+  const date=new Date(s+'T00:00:00Z');
+  return !Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===s;
+ }
+ function inspect(desc){
+  const dates=[];let invalid=false;
+  for(const line of String(desc||'').split(/\r?\n/u)){
+   const m=line.match(/^\s*(?:[-*]\s*)?(?:\*\*)?次回確認日(?:\*\*)?\s*[:：]\s*(.*?)\s*$/u);
+   if(!m)continue;
+   const value=m[1].trim();if(!valid(value))invalid=true;else dates.push(value);
+  }
+  if(invalid||new Set(dates).size>1)return {date:null,invalid:true};
+  return {date:dates[0]||null,invalid:false};
+ }
+ function todayLocal(d=new Date()){
+  return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+ }
+ function weekEnd(today){
+  if(!valid(today))return null;
+  const d=new Date(today+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+(7-d.getUTCDay())%7);
+  return d.toISOString().slice(0,10);
+ }
+ function bucket(desc,today){
+  const info=inspect(desc);
+  if(info.invalid)return 'invalid';
+  if(!info.date)return 'none';
+  if(!valid(today))return 'invalid';
+  if(info.date<=today)return 'due';
+  if(info.date<=weekEnd(today))return 'week';
+  return 'later';
+ }
+ function included(desc,filter,today){
+  const b=bucket(desc,today);
+  return filter==='all'||b===filter;
+ }
+ root.KoyoriNextReviewCore=Object.freeze({valid,inspect,todayLocal,weekEnd,bucket,included});
+})(window);
