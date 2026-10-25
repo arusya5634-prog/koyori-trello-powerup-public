@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>こより｜チェック項目の期日</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light dark}
+body{margin:0;background:#fff;color:#172b4d;font-size:13px;padding:14px;line-height:1.5}
+h1{font-size:16px;margin:0 0 6px}
+p{margin:3px 0 12px;color:#526078;font-size:12px}
+.list{margin:15px 0 4px}.list h2{font-size:13px;margin:12px 0 6px}
+.item{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;padding:8px 4px;border-bottom:1px solid #dfe1e6;align-items:start}
+.check{font-size:16px}.item-title{overflow-wrap:anywhere}
+.item.done .item-title{text-decoration:line-through;color:#626f86}
+.date{font-size:11px;border:1px solid #b6c2cf;border-radius:5px;white-space:nowrap;padding:3px 6px}
+.date.past{color:#ae2e24;border-color:#ae2e24}.date.today{color:#795900;border-color:#c7a242}
+.date.empty{border-color:transparent;color:#626f86}
+.note{margin:12px 0 5px;font-size:11px;color:#526078;line-height:1.6}
+button{font-size:12px;padding:7px 10px;border:1px solid #7a869a;border-radius:5px;background:transparent;color:inherit;cursor:pointer}
+#message{font-size:11px;display:inline-block;margin-left:8px;color:#526078}
+#message.error{color:#ae2e24}
+.empty-state{padding:14px 6px;color:#626f86}
+@media(prefers-color-scheme:dark){body{background:#1d2125;color:#dee4ea}p,.note,#message{color:#a9b4c2}
+.item{border-color:#454f59}.item.done .item-title,.empty-state,.date.empty{color:#9fadbc}
+.date{border-color:#526070}.date.past,#message.error{color:#ff9a8e;border-color:#c76053}.date.today{color:#ffde95;border-color:#b89c5e}}
+</style></head><body>
+<h1>チェック項目の期日</h1>
+<p>チェックリストの項目名に記録した「期日」を表示します。カード全体の期限とは別です。</p>
+<div id="list-root" aria-live="polite">チェックリストを読み込み中…</div>
+<div class="note">日付の編集：Trello標準のチェック項目名の末尾に <code>【期日：YYYY-MM-DD】</code> を記載。またはこよりに変更を依頼してください。無料版のため公式の項目期日通知はありません。</div>
+<div><button type="button" id="refresh">再読み込み</button><span id="message" role="status" aria-live="polite"></span></div>
+<script src="https://p.trellocdn.com/power-up.min.js"></script>
+<script src="./view/checklist-due-core.js?v=20261025-item-dates-v1"></script>
+<script>
+'use strict';
+const t=TrelloPowerUp.iframe(),core=window.KoyoriChecklistDueCore;
+const el=id=>document.getElementById(id);
+let generation=0;
+function addText(node,text){node.textContent=text;return node;}
+function render(data,today){
+ const root=el('list-root');root.replaceChildren();
+ const all=core.items(data);
+ if(!all){root.append(addText(document.createElement('div'),'チェック項目を取得できませんでした。カードを再度開くか再読み込みしてください。'));return false;}
+ if(!all.length){const empty=document.createElement('div');empty.className='empty-state';empty.textContent='このカードにはまだチェック項目がありません。';root.append(empty);return true;}
+ let current=null;
+ for(const item of all){
+  if(item.listName!==current){
+   current=item.listName;const section=document.createElement('div');section.className='list';
+   const title=document.createElement('h2');title.textContent=current;
+   section.append(title);root.append(section);
+  }
+  const row=document.createElement('div');row.className='item'+(item.completed?' done':'');
+  const mark=document.createElement('span');mark.className='check';mark.textContent=item.completed?'☑':'☐';
+  mark.setAttribute('aria-label',item.completed?'完了':'未完了');
+  const name=document.createElement('span');name.className='item-title';name.textContent=item.title||item.rawName;
+  const badge=document.createElement('span');badge.className='date';
+  if(item.invalid){badge.textContent='期日表記を確認';badge.classList.add('past');}
+  else if(!item.date){badge.textContent='期日なし';badge.classList.add('empty');}
+  else {badge.textContent=core.displayDate(item.date);badge.title='項目の期日：'+item.date;
+   if(!item.completed&&core.validDate(today)&&item.date<today)badge.classList.add('past');
+   if(!item.completed&&item.date===today)badge.classList.add('today');}
+  row.append(mark,name,badge);root.lastElementChild.append(row);
+ }
+ return true;
+}
+async function refresh(){
+ const seq=++generation;el('refresh').disabled=true;
+ try{
+  const card=await t.card('id','checklists');
+  if(seq!==generation)return;
+  if(!card||!Array.isArray(card.checklists))throw Error('checklists unavailable');
+  const today=new Date();const local=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),String(today.getDate()).padStart(2,'0')].join('-');
+  const ok=render(card.checklists,local);
+  el('message').textContent=ok?'Trelloの現在のチェック項目を表示しています。':'項目取得が不完全です。';
+  el('message').className=ok?'':'error';
+ }catch(e){if(seq!==generation)return;
+  el('list-root').textContent='チェック項目の取得に失敗しました。';
+  el('message').textContent='読み込み失敗。チェック項目は変更していません。';
+  el('message').className='error';
+ }finally{if(seq===generation)el('refresh').disabled=false;}
+}
+el('refresh').addEventListener('click',refresh);
+if(typeof t.render==='function')t.render(refresh);
+else refresh();
+</script></body></html>
