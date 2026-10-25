@@ -48,6 +48,25 @@
   return {status:validDate(today)&&first.date<today?'past':'scheduled',
    item:first};
  }
+ // Fail closed: an empty SDK response is not proof that a native Trello
+ // checklist is empty. A second supported card read may recover its items.
+ function badgeCount(card){
+  const n=card&&card.badges&&card.badges.checkItems;
+  return Number.isInteger(n)&&n>=0?n:null;
+ }
+ function resolveChecklists(primary,fallback){
+  const candidates=[primary,fallback].filter(Boolean);
+  for(const card of candidates){
+   if(!Array.isArray(card.checklists))continue;
+   const all=items(card.checklists);
+   if(all&&all.length)return {status:'ready',checklists:card.checklists};
+  }
+  const counts=candidates.map(badgeCount).filter(x=>x!==null);
+  const confirmedZero=counts.length>0&&counts.every(x=>x===0);
+  const verifiedEmpty=candidates.some(x=>Array.isArray(x.checklists)&&x.checklists.length===0);
+  if(verifiedEmpty&&confirmedZero)return {status:'empty',checklists:[]};
+  return {status:'unavailable',checklists:null};
+ }
  function displayDate(date){return validDate(date)?Number(date.slice(5,7))+'/'+Number(date.slice(8,10)):'';}
- root.KoyoriChecklistDueCore=Object.freeze({validDate,parseName,withDate,items,nextDue,displayDate});
+ root.KoyoriChecklistDueCore=Object.freeze({validDate,parseName,withDate,items,nextDue,resolveChecklists,displayDate});
 })(window);

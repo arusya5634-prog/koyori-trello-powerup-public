@@ -12,7 +12,7 @@
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
   <script src="./view/task-projection-core.js?v=20261025-owner-sync"></script>
   <script src="./view/top-summary-core.js?v=20261025-semantic-compact-v3"></script>
-  <script src="./view/checklist-due-core.js?v=20261025-item-dates-v1"></script>
+  <script src="./view/checklist-due-core.js?v=20261026-empty-state-v2"></script>
   <script>
     'use strict';
 
@@ -113,7 +113,7 @@
     function checklistDuePopup(t) {
       return t.popup({
         title: 'チェック項目の期日',
-        url: './checklist-dates.html',
+        url: './checklist-dates.html?v=20261026-empty-state-v2',
         height: 500
       });
     }
