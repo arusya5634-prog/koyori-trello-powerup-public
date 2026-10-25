@@ -28,7 +28,7 @@ button{font-size:12px;padding:7px 10px;border:1px solid #7a869a;border-radius:5p
 <div class="note">日付の編集：Trello標準のチェック項目名の末尾に <code>【期日：YYYY-MM-DD】</code> を記載。またはこよりに変更を依頼してください。無料版のため公式の項目期日通知はありません。</div>
 <div><button type="button" id="refresh">再読み込み</button><span id="message" role="status" aria-live="polite"></span></div>
 <script src="https://p.trellocdn.com/power-up.min.js"></script>
-<script src="./view/checklist-due-core.js?v=20261025-item-dates-v1"></script>
+<script src="./view/checklist-due-core.js?v=20261026-empty-state-v2"></script>
 <script>
 'use strict';
 const t=TrelloPowerUp.iframe(),core=window.KoyoriChecklistDueCore;
@@ -64,12 +64,24 @@ function render(data,today){
 async function refresh(){
  const seq=++generation;el('refresh').disabled=true;
  try{
-  const card=await t.card('id','checklists');
+  const direct=await t.card('id','checklists','badges').catch(()=>null);
   if(seq!==generation)return;
-  if(!card||!Array.isArray(card.checklists))throw Error('checklists unavailable');
+  let result=core.resolveChecklists(direct,null);
+  if(result.status==='unavailable'){
+   const all=await t.card('all').catch(()=>null);
+   if(seq!==generation)return;
+   if(direct&&all&&direct.id&&all.id&&direct.id!==all.id)throw Error('card context changed');
+   result=core.resolveChecklists(direct,all);
+  }
+  if(result.status==='unavailable'){
+   el('list-root').textContent='Trelloのチェック項目をPower-Upが取得できません。項目が無いという意味ではありません。';
+   el('message').textContent='カードを開き直すか再読み込みしてください。';
+   el('message').className='error';
+   return;
+  }
   const today=new Date();const local=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),String(today.getDate()).padStart(2,'0')].join('-');
-  const ok=render(card.checklists,local);
-  el('message').textContent=ok?'Trelloの現在のチェック項目を表示しています。':'項目取得が不完全です。';
+  const ok=render(result.checklists,local);
+  el('message').textContent=ok?'Trelloのチェック項目を表示しています。':'取得したデータが不完全です。';
   el('message').className=ok?'':'error';
  }catch(e){if(seq!==generation)return;
   el('list-root').textContent='チェック項目の取得に失敗しました。';
