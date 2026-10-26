@@ -9,16 +9,32 @@
 window.addEventListener('load',async()=>{
  const status=document.getElementById('status'),cfg=window.KoyoriChecklistPilotConfig;
  const clear=()=>{try{history.replaceState(null,'',location.pathname);}catch(_){}};
+ // Stages are constant, non-sensitive labels. Never include exceptions or URL parameters.
+ let stage='CONFIG';
  try{
   if(!cfg||!cfg.configured||new URL(cfg.redirectUri).href!==location.href.split('?')[0].split('#')[0])
    throw Error('CONFIG');
-  if(!window.opener||window.opener.closed)throw Error('OPENER');
+  stage='OPENER_MISSING';
+  if(!window.opener||window.opener.closed)throw Error('NO_OPENER');
+  stage='OPENER_MISMATCH';
+  let validOrigin=false;
+  try{
+   const expected=new URL('./checklist-oauth2-pilot.html',cfg.redirectUri);
+   validOrigin=window.opener.location.origin===location.origin&&
+    window.opener.location.pathname===expected.pathname;
+  }catch(_){validOrigin=false;}
+  if(!validOrigin)throw Error('WRONG_OPENER');
+  stage='OPENER_INACTIVE';
+  if(window.opener.KoyoriChecklistConsentActive!==true)throw Error('NOT_WAITING');
+  stage='HANDLER_MISSING';
+  if(typeof window.opener.authorize!=='function')throw Error('NO_HANDLER');
+  stage='SDK_INIT';
   const t=window.TrelloPowerUp.iframe({clientId:cfg.clientId,redirectUri:cfg.redirectUri});
+  stage='CALLBACK';
   await t.getOAuth2ApiClient().redirectUriCallback();
   status.textContent='認証処理が終了しました。開始画面を確認してください。';
  }catch(_){
-  // Never reveal OAuth code, state, fragment, exception message or token.
-  status.textContent='認証のコールバックを完了できませんでした。開始画面で確認してください。';
+  status.textContent='認証のコールバックを完了できませんでした（'+stage+'）。開始画面を確認してください。';
  }finally{clear();}
 });
 </script></body></html>
