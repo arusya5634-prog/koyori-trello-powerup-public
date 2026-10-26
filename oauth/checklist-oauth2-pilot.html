@@ -29,9 +29,14 @@
  auth.disabled=false;read.disabled=false;
  auth.addEventListener('click',async function(){
   auth.disabled=true;status.textContent='本人の明示同意を待っています。';
-  const result=await api.authorizeFromClick(t);
-  status.textContent=result.status==='authorized'?'認証完了。読み取り試験に進めます。':'認証は完了していません。';
-  auth.disabled=false;
+  window.KoyoriChecklistConsentActive=true;
+  try{
+   const result=await api.authorizeFromClick(t);
+   status.textContent=result.status==='authorized'?'認証完了。読み取り試験に進めます。':'認証は完了していません。';
+  }finally{
+   window.KoyoriChecklistConsentActive=false;
+   auth.disabled=false;
+  }
  });
  read.addEventListener('click',async function(){
   read.disabled=true;items.replaceChildren();status.textContent='チェック項目を読み取っています。';
