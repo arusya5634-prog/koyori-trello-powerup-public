@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<title>チェックリスト試験用コネクタ</title></head>
+<body>
+<script src="https://p.trellocdn.com/power-up.min.js"></script>
+<script>
+'use strict';
+// Attach to a TEST Power-Up only. Production connector remains unchanged.
+window.TrelloPowerUp.initialize({
+ 'card-buttons':function(){
+  return [{
+   text:'チェックリスト試験',
+   condition:'edit',
+   icon:'../icons/priority-light.svg',
+   callback:function(t){
+    return t.modal({
+     title:'チェックリスト認証・表示試験',
+     url:'./checklist-oauth2-pilot.html',
+     height:600,
+     fullscreen:false
+    });
+   }
+  }];
+ }
+});
+</script>
+</body></html>
