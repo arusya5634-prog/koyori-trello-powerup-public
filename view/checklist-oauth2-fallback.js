@@ -3,13 +3,14 @@
  // Consent may grant read+write at Trello OAuth2 level. This component only GETs.
  const SCOPES=Object.freeze(['read:board:trello','write:board:trello']);
  const CARD=/^[a-f0-9]{24}$/i;
+ const TOKEN=/^[A-Za-z0-9._~+\/-]{8,8192}={0,4}$/;
  const BASE='https://api.trello.com';
  function safe(status){return {status,checklists:null};}
  function lists(payload){
   if(!Array.isArray(payload)||payload.length>100)return null;
   for(const list of payload){
    if(!list||typeof list.name!=='string'||!Array.isArray(list.checkItems)||list.checkItems.length>1000
-    ||list.checkItems.some(x=>!x||typeof x.name!=='string'||!['complete','incomplete'].includes(x.state)))return null;
+    ||list.checkItems.some(x=>!x||typeof x.name!=='string'||!['complete','incomplete'].includes(String(x.state||'').toLowerCase())))return null;
   }
   return payload;
  }
@@ -30,7 +31,7 @@
   if(!auth||typeof auth.getAccessToken!=='function')return safe('not-authorized');
   let token;
   try{token=await auth.getAccessToken();}catch(_){return safe('not-authorized');}
-  if(typeof token!=='string'||!token.trim())return safe('not-authorized');
+  if(typeof token!=='string'||!TOKEN.test(token))return safe('not-authorized');
   let result;
   try{
    const response=await fetchImpl(BASE+path,{
