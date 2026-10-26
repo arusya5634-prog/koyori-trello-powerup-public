@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>チェック項目 認証試験</title></head>
+<body>
+<h1>チェック項目の読み取り試験</h1>
+<p>隔離されたテストPower-Up専用。本番Power-Upでは使用しない。</p>
+<p>OAuth 2.0の承認画面は、このボードに対する読み取りと書き込みの両方の権限を要求する。試験コードのカード操作はGETだけ。</p>
+<p id="status" role="status" aria-live="polite">未実行</p>
+<button id="authorize" disabled>読み書き権限を確認して認証する</button>
+<button id="read" disabled>チェックリストを読み取る</button>
+<div id="items" aria-live="polite"></div>
+<script src="https://p.trellocdn.com/power-up.min.js"></script>
+<script src="./checklist-pilot-config.js"></script>
+<script src="../view/checklist-oauth2-fallback.js"></script>
+<script src="../view/checklist-due-core.js"></script>
+
+<script>
+'use strict';
+(function(){
+ const status=document.getElementById('status'),auth=document.getElementById('authorize'),
+  read=document.getElementById('read'),items=document.getElementById('items');
+ const cfg=window.KoyoriChecklistPilotConfig;
+ const validOrigin=cfg&&cfg.configured&&new URL(cfg.redirectUri).origin===location.origin;
+ if(!validOrigin||!window.TrelloPowerUp||!window.KoyoriChecklistOAuth2Fallback){
+  status.textContent='試験設定が未完了です。接続情報を確認してください。';return;
+ }
+ const t=window.TrelloPowerUp.iframe({clientId:cfg.clientId,redirectUri:cfg.redirectUri});
+ const api=window.KoyoriChecklistOAuth2Fallback;
+ auth.disabled=false;read.disabled=false;
+ auth.addEventListener('click',async function(){
+  auth.disabled=true;status.textContent='本人の明示同意を待っています。';
+  const result=await api.authorizeFromClick(t);
+  status.textContent=result.status==='authorized'?'認証完了。読み取り試験に進めます。':'認証は完了していません。';
+  auth.disabled=false;
+ });
+ read.addEventListener('click',async function(){
+  read.disabled=true;items.replaceChildren();status.textContent='チェック項目を読み取っています。';
+  const result=await api.read(t,fetch.bind(window));
+  if(result.status!=='ready'){
+   status.textContent='取得できませんでした（'+result.status+'）。カードが空という意味ではありません。';
+   read.disabled=false;return;
+  }
+  const dateCore=window.KoyoriChecklistDueCore;
+  const entries=dateCore&&dateCore.items(result.checklists);
+  if(!entries){status.textContent='取得したチェック項目の構造を確認できません。';read.disabled=false;return;}
+  for(const entry of entries){
+   const row=document.createElement('p');
+   // Use textContent only: never interpret checklist names as HTML.
+   row.textContent=(entry.completed?'済':'未')+' ｜ '+entry.title+
+     (entry.date?' ｜ 期日 '+entry.date:'');
+   items.appendChild(row);
+  }
+  status.textContent='取得完了：'+entries.length+'項目。編集操作はしていません。';
+  read.disabled=false;
+ });
+})();
+</script></body></html>
