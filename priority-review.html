@@ -69,6 +69,10 @@ section[hidden]{display:none}
 .focus-review-entry{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .focus-review-entry button{padding:7px 11px;border:1px solid #0c66e4;border-radius:6px;background:#fff;color:#0c66e4;font:inherit;cursor:pointer;flex:none}
 .focus-review-entry button:hover{background:#deebff}
+.focus-guide{flex:1;min-width:220px;line-height:1.65}
+.focus-guide strong{display:block;font-size:14px;margin-bottom:3px}
+.focus-filter-guide{font-size:12px;line-height:1.65;margin:2px 0 9px;color:#44546f}
+@media(prefers-color-scheme:dark){.focus-filter-guide{color:#bac4d2}}
 @media(prefers-color-scheme:dark){.focus-review-entry button{background:#282e33;color:#85b8ff;border-color:#85b8ff}.focus-review-entry button:hover{background:#243c54}}
 .focus-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:10px 0}
 .focus-choices button{padding:9px 2px;background:#f1f2f4;border:1px solid #dfe1e6;border-radius:6px;cursor:pointer;color:inherit;font:inherit;font-size:11px}
@@ -142,7 +146,7 @@ section[hidden]{display:none}
 <div id="daily-data-note" role="status" hidden></div>
 <section id="focus-pane">
 <div class="focus-header focus-review-entry">
-  <span id="focus-description">朝の整理では「自分が次に動く」と「確認日が到来した確認待ち」をまとめて表示します。ここに出たからといって、今日中の完了を求めるものではありません。</span>
+  <div class="focus-guide" role="status" aria-live="polite"><strong id="focus-guide-title">閲覧中：朝の整理</strong><div id="focus-description">今日の重点候補を最大4件表示します。今日中の完了を求めるものではありません。</div></div>
   <button type="button" id="focus-open-review" title="Trelloデータの記載・ラベルに関する点検を開きます">記載チェック（要確認）</button>
 </div>
 <div id="invalid-review-warning" class="invalid-review-warning" role="status" hidden></div>
@@ -169,6 +173,7 @@ section[hidden]{display:none}
 <button type="button" data-review-date="none" aria-pressed="false"><strong id="focus-date-none">—</strong>日付未設定</button>
 <button type="button" data-review-date="all" aria-pressed="true"><strong id="focus-date-all">—</strong>すべて</button>
 </div>
+<div id="focus-filter-guide" class="focus-filter-guide" role="status" aria-live="polite">絞り込み：すべて｜確認日の状態を問わず表示します。</div>
 <div class="focus-toolbar">
 <input id="focus-search" type="search" placeholder="カード・次の一手・分類を検索" aria-label="今日の見直し検索">
 <button id="focus-missing" type="button" aria-pressed="false">情報未記載だけ（—）</button>
@@ -254,6 +259,14 @@ const ACTIONS=reviewCore.ACTIONS;
 const analysisEntry=/(?:^\?|&)entry=analysis(?:&|$)/u.test((window.location&&window.location.search)||'');
 const reviewState={view:analysisEntry?'priority':'focus',query:'',list:'all',kind:'all',loaded:false,loadError:false};
 const focusState={group:'morning',query:'',date:'all',missingOnly:false};
+const focusGuides=Object.freeze({"morning":{"name":"朝の整理","short":"今日の重点候補を最大4件表示","body":"自分が動く仕事と確認日が到来した委任先の仕事から、優先度順に最大4件を表示します。今日中の完了を求めるものではありません。"},"self":{"name":"自分が動く","short":"自分が次に行動するカード","body":"「自分が次に動く」カードを一覧します。表示件数は今日中に終える仕事の量ではありません。"},"waiting":{"name":"確認待ち","short":"相手の回答・作業を待つカード","body":"「次に確認する」カードを一覧します。確認日がまだ来ていないものや日付未設定のものも含みます。"},"radar":{"name":"確認レーダー","short":"確認待ちを確認日と記録状況で整理","body":"確認待ちを確認日到来・今週これから・それ以降・日付なし・日付要確認などに分けます。次回確認日は仕事の締切ではありません。"},"quality":{"name":"点検候補","short":"情報不足や長期間未更新の点検候補","body":"次の一手・担当者・確認日の情報不足や長期間更新のないカードを表示します。停滞・遅延・未実施とは断定しません。"},"weekly":{"name":"週次見直し","short":"重点・確認・点検・構想の候補を最大9件","body":"重点・確認待ち・点検候補・構想を重複なく最大9件表示します。過去との差分がないため「今週前進した」とは判定しません。"},"undated":{"name":"日付なし","short":"次回確認日のない確認待ちカード","body":"「次に確認する」のうち次回確認日が未設定のカードを表示します。期限切れや催促の指示ではありません。"},"thinking":{"name":"考える","short":"検討・構想に分類されたカード","body":"「検討・構想」カードを一覧します。直ちに実行すべき仕事という意味ではありません。"},"unverified":{"name":"現況未確認","short":"状況の記録を確認したいカード","body":"現在地や状況に未確認の記載があるカードを表示します。作業が止まっていると判定したものではありません。"}});
+const dateGuides=Object.freeze({"due":{"name":"確認日到来","short":"次回確認日が今日以前のカード","body":"次回確認日が今日以前のもの。正式な納期や遅延の判定ではありません。"},"week":{"name":"今週これから","short":"次回確認日が明日から日曜までのカード","body":"次回確認日が今日より後で、今週の日曜日までのものです。"},"none":{"name":"日付未設定","short":"次回確認日の記載がないカード","body":"次回確認日の記載がないもの。催促すべきという意味ではありません。"},"all":{"name":"すべて","short":"確認日の状態で絞り込まない","body":"次回確認日の状態を問わず表示します。日付の不正もここでは除外しません。"}});
+document.querySelectorAll('[data-focus]').forEach(b=>{
+ const guide=focusGuides[b.dataset.focus];if(guide)b.setAttribute('title',guide.short);
+});
+document.querySelectorAll('[data-review-date]').forEach(b=>{
+ const guide=dateGuides[b.dataset.reviewDate];if(guide)b.setAttribute('title',guide.short);
+});
 const filterCore=window.KoyoriTaskFilterCore;
 
 const el=id=>document.getElementById(id);
@@ -473,19 +486,18 @@ function paintFocus(){
  }
  document.querySelectorAll('[data-focus]').forEach(b=>
   b.setAttribute('aria-pressed',String(b.dataset.focus===focusState.group)));
- el('focus-description').textContent=focusState.group==='morning'?
-  '今日の重点は最大4件：自分が動く仕事と、確認日が到来した委任先の仕事を優先度順に表示。今日中の完了を求めるものではありません。':
-  focusState.group==='radar'?
-  (function(){const r=focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today);const c=r.counts;
-   return !r.ready?'確認日の判定に失敗しました':
-    '確認レーダー：確認日到来'+c.due+'件／今週これから'+c.week+'件／日付なし'+c.undated+'件／日付要確認'+c.invalid+'件。日付なしは遅延とは判断しません。';})():
-  focusState.group==='quality'?
-  '点検候補：次の一手・担当者・確認日の不明点や長期間更新のないカードを表示。遅延・未実施とは断定しません。':
-  focusState.group==='weekly'?
-  '週次見直し：重点・確認・点検・構想を最大9件まで表示。過去との差分がないため「今週前進した」とは判定しません。':
-  focusState.group==='undated'?
-  '確認日を設定していない「次に確認する」カードを一覧します。期限切れ・催促が必要という意味ではありません。':
-  '見直し対象をアクション別に表示します。確認日は正式な期限ではありません。休止カードは除外します。';
+ const guide=focusGuides[focusState.group]||focusGuides.morning;
+ el('focus-guide-title').textContent='閲覧中：'+guide.name;
+ let detail=guide.body;
+ if(focusState.group==='radar'){
+  const radar=focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today);
+  const c=radar.counts;
+  detail+=' '+(!radar.ready?'確認日の判定に失敗しました。':
+   '内訳：確認日到来'+c.due+'件／今週これから'+c.week+'件／日付なし'+c.undated+'件／日付要確認'+c.invalid+'件。');
+ }
+ el('focus-description').textContent=detail;
+ const dateGuide=dateGuides[focusState.date]||dateGuides.all;
+ el('focus-filter-guide').textContent='絞り込み：'+dateGuide.name+'｜'+dateGuide.body;
  // Invalid follow-up dates must never silently disappear from the morning view.
  // They are not overdue; keep them separate from cards with no review date.
  const invalidCards=state.cards.filter(c=>{
@@ -555,6 +567,7 @@ function paintFocus(){
  const incomplete=dateEntries.filter(({missingInfo})=>missingInfo).length;
  el('focus-missing').textContent='情報未記載だけ（'+incomplete+'）';
  el('focus-missing').setAttribute('aria-pressed',String(focusState.missingOnly));
+ el('focus-missing').setAttribute('title','現在地または次の一手が未記載のカードだけを表示します。遅延の判定ではありません。');
  const entries=dateEntries.filter(({card,missingInfo})=>
   filterCore.matches(card,{query:focusState.query})&&(!focusState.missingOnly||missingInfo));
  const missingPriority=all.filter(({priority})=>priority===null).length;
