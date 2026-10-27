@@ -30,5 +30,125 @@
     return {status:writeError?'write-failed':'unverified',value:after};
   }
 
-  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save});
+  // Explicit, card-bound requests can be staged by the ChatGPT Trello
+  // connector in a card description. The description is a REQUEST ONLY:
+  // shared plugin data remains the single source of truth.
+  const PREFIX='Power-Up優先度反映依頼:';
+  const REQUEST=/^\s*[-*]?\s*Power-Up優先度反映依頼:\s*v1\|([0-9a-f]{24})\|([A-Za-z0-9_-]{8,64})\|(unset|emergency|urgent|soon|normal)\|(emergency|urgent|soon|normal)\s*$/u;
+  const RECEIPT='priorityLastAppliedRequest';
+  function instruction(description,cardId){
+    if(typeof description!=='string')return {status:'none'};
+    const lines=description.split(/\r?\n/u).filter(x=>x.includes(PREFIX));
+    if(!lines.length)return {status:'none'};
+    if(!(/^[0-9a-f]{24}$/iu.test(String(cardId||''))))return {status:'invalid'};
+    if(lines.length!==1)return {status:'invalid'};
+    const match=lines[0].match(REQUEST);
+    if(!match||match[1].toLowerCase()!==cardId.toLowerCase())
+      return {status:'invalid'};
+    return {status:'ready',request:Object.freeze({
+      cardId:match[1],id:match[2],
+      expected:match[3]==='unset'?null:match[3],requested:match[4]
+    })};
+  }
+  async function applyInstruction(t,cardId,request,checkedBefore){
+    if(!t||typeof t.get!=='function'||typeof t.set!=='function'||
+      !request||cardId!==request.cardId||
+      !/^[0-9a-f]{24}$/iu.test(cardId)||!/^[A-Za-z0-9_-]{8,64}$/u.test(request.id)||
+      !valid(request.expected)||!PRIORITIES.includes(request.requested))
+      return {status:'invalid'};
+    async function read(){
+      const result=await Promise.all([
+        t.get(cardId,'shared','priority',null),
+        t.get(cardId,'shared',RECEIPT,null)
+      ]);
+      const priority=canonical(result[0]),receipt=canonical(result[1]);
+      if(!valid(priority)|| (receipt!==null&&typeof receipt!=='string'))
+        return null;
+      return {priority,receipt};
+    }
+    // In the auto badge path, the same SDK turn reads the fresh card and
+    // both priority keys concurrently. Reuse those values; the second SDK
+    // read below still guards against edits before the write.
+    let before;
+    try{before=checkedBefore===undefined?await read():checkedBefore;}
+    catch(_){return {status:'read-failed'};}
+    if(!before||!valid(before.priority)||
+      (before.receipt!==null&&typeof before.receipt!=='string'))
+      return {status:'invalid-remote'};
+    // A consumed request must NEVER overwrite a subsequent manual change.
+    if(before.receipt===request.id)return {status:before.priority===request.requested?
+      'already-applied':'superseded',value:before.priority};
+    // Fail closed if the saved priority has moved since the request was staged.
+    if(before.priority!==request.expected)return {status:'conflict',value:before.priority};
+    let latest;
+    try{latest=await read();}catch(_){return {status:'read-failed'};}
+    if(!latest)return {status:'invalid-remote'};
+    if(latest.priority!==before.priority||latest.receipt!==before.receipt)
+      return {status:'conflict',value:latest.priority};
+    // Set both keys in ONE SDK shared-data write. There is no REST write
+    // endpoint and the SDK does not provide atomic compare-and-swap.
+    let writeFailed=false;
+    try{
+      await t.set(cardId,'shared',{priority:request.requested,[RECEIPT]:request.id});
+    }catch(_){writeFailed=true;}
+    let after;
+    try{after=await read();}catch(_){return {status:'unverified'};}
+    if(!after)return {status:'invalid-remote'};
+    if(after.receipt===request.id&&after.priority===request.requested)
+      return {status:'saved',value:after.priority};
+    if(after.priority===before.priority&&after.receipt===before.receipt)
+      return {status:writeFailed?'write-failed':'unverified',value:after.priority};
+    return {status:'unverified',value:after.priority};
+  }
+
+  // Chat-originated requests can be consumed when Trello next renders a card.
+  // This works only in an authorized, writable Power-Up context. It does NOT
+  // provide background execution when the Trello board is closed.
+  // Render callbacks are invoked repeatedly, so only attempt once per card
+  // and request ID for the lifetime of this connector page.
+  const autoAttempts=new Map();
+  async function autoConsume(t,card){
+    const parsed=instruction(card&&card.desc,card&&card.id);
+    if(parsed.status!=='ready')return {status:parsed.status};
+    if(!t||typeof t.card!=='function'||typeof t.getContext!=='function'||
+      typeof t.isMemberSignedIn!=='function'||
+      typeof t.memberCanWriteToModel!=='function')return {status:'not-authorized'};
+    let context,canWrite;
+    try{
+      context=t.getContext();
+      canWrite=t.isMemberSignedIn()===true&&t.memberCanWriteToModel('card')===true;
+    }catch(_){return {status:'not-authorized'};}
+    // Trello recommends memberCanWriteToModel('card') before every shared set.
+    // Context fields also defend against cross-card, anonymous or board-read
+    // only execution. Do not guess that a missing card context is writable.
+    if(!canWrite||!context||!context.member||context.member==='notLoggedIn'||
+      !context.permissions||context.permissions.board!=='write'||
+      context.permissions.card!=='write'||context.card!==card.id)
+      return {status:'not-authorized'};
+    const key=card.id+'|'+parsed.request.id;
+    // The connector already fetched the saved priority for this render.
+    // After any first attempt (including ambiguous outcomes), do not read
+    // or write the same queued request again within this connector page.
+    // A fresh render can use that already-fetched priority for its badge.
+    if(autoAttempts.has(key))return {status:'already-attempted'};
+    const pending=(async()=>{
+      let fresh,priority,receipt;
+      try{
+        [fresh,priority,receipt]=await Promise.all([
+          t.card('id','name','desc'),
+          t.get(card.id,'shared','priority',null),
+          t.get(card.id,'shared',RECEIPT,null)
+        ]);
+      }catch(_){return {status:'card-read-failed'};}
+      if(!fresh||fresh.id!==card.id||fresh.name!==card.name||
+        fresh.desc!==card.desc)return {status:'card-changed'};
+      return applyInstruction(t,card.id,parsed.request,{
+        priority:canonical(priority),receipt:canonical(receipt)
+      });
+    })().catch(()=>({status:'unverified'}));
+    autoAttempts.set(key,pending);
+    return pending;
+  }
+
+  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save,instruction,applyInstruction,autoConsume});
 })(window);

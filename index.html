@@ -13,6 +13,7 @@
   <script src="./view/task-projection-core.js?v=20261025-owner-sync"></script>
   <script src="./view/top-summary-core.js?v=20261025-semantic-compact-v3"></script>
   <script src="./view/checklist-due-core.js?v=20261026-empty-state-v2"></script>
+  <script src="./view/priority-save-core.js?v=20261027-auto-request-v1"></script>
   <script>
     'use strict';
 
@@ -129,13 +130,26 @@
     window.TrelloPowerUp.initialize({
       'card-badges': function(t) {
         return Promise.all([
-          t.card('name', 'desc'),
+          t.card('id', 'name', 'desc'),
           t.get('card', 'shared', 'priority', null).catch(function() { return null; })
         ])
-          .then(function(values) {
+          .then(async function(values) {
+            const card=values[0];
+            let saved=values[1];
+            // Only an exact, explicitly staged directive can trigger a write.
+            // Failure or lack of board-write rights leaves the previous priority.
+            const core=window.KoyoriPrioritySaveCore;
+            if(card&&core&&typeof core.autoConsume==='function'){
+              const result=await core.autoConsume(t,card);
+              // A fresh post-write SDK verification is included in the
+              // result when a request is saved. Reuse it without another
+              // round-trip. Later renders still read the current priority
+              // at the start and never replay the old request.
+              if(result.status==='saved')saved=result.value;
+            }
             // Scan-friendly card order: priority first, then ball owner.
-            return priorityBadgesFor(values[0] && values[0].name, values[1])
-              .concat(badgeFor(values[0] && values[0].desc));
+            return priorityBadgesFor(card&&card.name,saved)
+              .concat(badgeFor(card&&card.desc));
           })
           .catch(function() { return []; });
       },
