@@ -91,3 +91,142 @@
  }
  root.KoyoriDailyFocusCore=Object.freeze({GROUPS,RANK,nextStep,stepInfo,currentState,ballOwner,infoMissing,priorityKey,collect,morning,undatedWaiting,weeklyUndated});
 })(window);
+
+// Companion read-only focus selector; kept in the existing public allowlisted module.
+(function(root){
+ 'use strict';
+ // Read-only. The caller supplies Trello-authoritative priority data and
+ // source card fields; no new deadlines, reminders, owners or writes.
+ const RANK={emergency:0,urgent:1,soon:2,normal:3};
+ function rank(item){
+  return item.priority==null?4:RANK[item.priority]??4;
+ }
+ function byRank(a,b){
+  return rank(a)-rank(b)||(a.card.order??0)-(b.card.order??0);
+ }
+ function unique(items){
+  const ids=new Set();
+  return items.filter(x=>{
+   if(!x||!x.card||!x.card.id||ids.has(x.card.id))return false;
+   ids.add(x.card.id);return true;
+  });
+ }
+ function radar(cards,reviewCore,focusCore,calendar,today){
+  if(!calendar.valid(today))return {ready:false,items:[],counts:null};
+  const counts={due:0,week:0,later:0,undated:0,invalid:0,unknownData:0};
+  const items=focusCore.collect(cards,reviewCore,'waiting').filter(x=>!x.review.paused).map(x=>{
+   const bucket=x.review.dataMissing?'unknownData':
+    calendar.bucket(x.card.desc,today);
+   const category=bucket==='none'?'undated':bucket;
+   counts[category]=(counts[category]||0)+1;
+   return {...x,radarBucket:category,focusReason:'followup'};
+  });
+  const ORDER={due:0,week:1,invalid:2,unknownData:3,undated:4,later:5};
+  items.sort((a,b)=>(ORDER[a.radarBucket]??6)-(ORDER[b.radarBucket]??6)||byRank(a,b));
+  return {ready:true,counts,items};
+ }
+ function daily(cards,reviewCore,focusCore,calendar,today,limit=4){
+  if(!calendar.valid(today))return {ready:false,items:[],attention:[],radar:radar(cards,reviewCore,focusCore,calendar,today)};
+  const cap=Number.isSafeInteger(limit)&&limit>0?Math.min(limit,4):4;
+  const self=focusCore.collect(cards,reviewCore,'self').map(x=>({...x,focusReason:'self'}));
+  const waiting=radar(cards,reviewCore,focusCore,calendar,today);
+  const due=waiting.items.filter(x=>x.radarBucket==='due');
+  // Normally three execution candidates and one confirmed-date follow-up.
+  // Empty slots are filled from remaining *eligible* work; never pad to four.
+  const firstSelf=self.slice(0,Math.min(3,cap));
+  const firstDue=due.slice(0,Math.min(1,Math.max(0,cap-firstSelf.length)));
+  const picked=unique([...firstSelf,...firstDue]);
+  const candidates=unique([...self,...due]).filter(x=>!picked.some(y=>y.card.id===x.card.id)).sort(byRank);
+  for(const item of candidates){if(picked.length>=cap)break;picked.push(item);}
+  picked.sort(byRank);
+  const attention=unique([
+   ...self.filter(x=>x.missingInfo||x.stepProposal||x.review.dataMissing||x.review.manyActions),
+   ...waiting.items.filter(x=>['invalid','unknownData'].includes(x.radarBucket))
+  ]).map(x=>({card:x.card,reason:x.radarBucket==='invalid'?'invalid-review-date':
+   x.review.dataMissing?'missing-source':
+   x.review.manyActions?'conflicting-actions':'missing-action-or-state'}));
+  return {ready:true,items:picked,attention,radar:waiting,
+   inspectedEligible:unique([...self,...due]).length};
+ }
+ function thinking(cards,reviewCore,focusCore,limit=2){
+  const cap=Number.isSafeInteger(limit)&&limit>0?Math.min(limit,2):2;
+  return focusCore.collect(cards,reviewCore,'thinking').slice(0,cap);
+ }
+
+ // Review candidates are evidence gaps, never evidence that a task is late.
+ function quality(cards,reviewCore,focusCore,calendar,today,clock){
+  if(!calendar.valid(today))return {ready:false,items:[],counts:null,scanned:0};
+  const now=Number.isFinite(clock)?clock:Date.parse(today+'T23:59:59Z');
+  const counts={sourceMissing:0,conflictingActions:0,missingNextAction:0,
+   missingOwner:0,invalidReviewDate:0,unverifiedStatus:0,staleCandidate:0};
+  const items=[],seen=new Set();
+  for(const card of cards){
+   if(!card||!card.id||seen.has(card.id))continue;
+   seen.add(card.id);
+   const review=reviewCore.derive(card);
+   if(review.paused)continue;
+   const action=review.action||[];
+   const active=action.includes('自分が次に動く')||action.includes('次に確認する');
+   const reason=[];
+   if(review.dataMissing)reason.push('sourceMissing');
+   if(review.manyActions)reason.push('conflictingActions');
+   if(active&&!focusCore.nextStep(card.desc))reason.push('missingNextAction');
+   if(action.includes('次に確認する')&&!focusCore.ballOwner(card.desc))reason.push('missingOwner');
+   if(!review.dataMissing&&calendar.inspect(card.desc).invalid)reason.push('invalidReviewDate');
+   if(review.unverified)reason.push('unverifiedStatus');
+   const last=card.lastActivity?Date.parse(card.lastActivity):NaN;
+   if(active&&!review.routine&&Number.isFinite(last)&&Number.isFinite(now)&&last<=now-14*86400000)
+    reason.push('staleCandidate');
+   if(!reason.length)continue;
+   for(const key of reason)counts[key]++;
+   items.push({card,review,priority:focusCore.priorityKey(card),
+    step:focusCore.nextStep(card.desc),status:focusCore.currentState(card.desc),
+    ball:focusCore.ballOwner(card.desc),missingInfo:focusCore.infoMissing(card.desc),
+    stepProposal:focusCore.stepInfo(card.desc).proposal,
+    attentionReasons:reason,focusReason:'health'});
+  }
+  items.sort((a,b)=>byRank(a,b));
+  return {ready:true,items,counts,scanned:seen.size};
+ }
+ // A weekly *snapshot*, not a statement about week-on-week improvement.
+ // Progress deltas require an actual historic comparison that is not stored here.
+ function weekly(cards,reviewCore,focusCore,calendar,today){
+  if(!calendar.valid(today))return {ready:false};
+  const focus=daily(cards,reviewCore,focusCore,calendar,today);
+  const waiting=focus.radar;
+  const exceptions=quality(cards,reviewCore,focusCore,calendar,today);
+  return {ready:true,priorityActions:focus.items.slice(0,4),
+   dueFollowups:waiting.items.filter(x=>x.radarBucket==='due'),
+   upcomingFollowups:waiting.items.filter(x=>x.radarBucket==='week'),
+   thinking:thinking(cards,reviewCore,focusCore,2),
+   exceptions:exceptions.items.slice(0,3),
+   changeEvidenceAvailable:false};
+ }
+
+
+ // Optional weekly overview: show a bounded snapshot. Never invent "this week
+ // progressed" without actual change history and never duplicate the same card.
+ function weeklyOverview(cards,reviewCore,focusCore,calendar,today){
+  const snapshot=weekly(cards,reviewCore,focusCore,calendar,today);
+  if(!snapshot.ready)return {ready:false,items:[],changeEvidenceAvailable:false};
+  const seen=new Set(),items=[];
+  const groups=[
+   ['重点候補',snapshot.priorityActions,4],
+   ['確認対象',[...snapshot.dueFollowups,...snapshot.upcomingFollowups],2],
+   ['点検候補',snapshot.exceptions,1],
+   ['構想の見直し',snapshot.thinking,2]
+  ];
+  for(const [label,source,cap] of groups){
+   let added=0;
+   for(const item of source){
+    if(added>=cap)break;
+    if(!item?.card?.id||seen.has(item.card.id))continue;
+    seen.add(item.card.id);items.push({...item,weeklyLabel:label});
+    added++;
+   }
+  }
+  return {ready:true,items,changeEvidenceAvailable:false};
+ }
+
+ root.KoyoriFocusV2Core=Object.freeze({daily,radar,thinking,quality,weekly,weeklyOverview});
+})(window);

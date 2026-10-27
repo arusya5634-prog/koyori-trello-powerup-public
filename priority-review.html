@@ -150,6 +150,9 @@ section[hidden]{display:none}
 <button type="button" data-focus="morning" aria-pressed="true"><strong id="focus-count-morning">—</strong>朝の整理</button>
 <button type="button" data-focus="self" aria-pressed="false"><strong id="focus-count-self">—</strong>自分が動く</button>
 <button type="button" data-focus="waiting" aria-pressed="false"><strong id="focus-count-waiting">—</strong>確認待ち</button>
+<button type="button" data-focus="radar" aria-pressed="false"><strong id="focus-count-radar">—</strong>確認レーダー</button>
+<button type="button" data-focus="quality" aria-pressed="false"><strong id="focus-count-quality">—</strong>点検候補</button>
+<button type="button" data-focus="weekly" aria-pressed="false"><strong id="focus-count-weekly">—</strong>週次見直し</button>
 <button type="button" data-focus="undated" aria-pressed="false"><strong id="focus-count-undated">—</strong>日付なし</button>
 <button type="button" data-focus="thinking" aria-pressed="false"><strong id="focus-count-thinking">—</strong>考える</button>
 <button type="button" data-focus="unverified" aria-pressed="false"><strong id="focus-count-unverified">—</strong>現況未確認</button>
@@ -219,7 +222,7 @@ section[hidden]{display:none}
 <script src="https://p.trellocdn.com/power-up.min.js"></script>
 <script src="./view/task-filter-core.js?v=20261025-card-view-v2"></script>
 <script src="./view/review-core.js?v=20261025-confirmation-variants"></script>
-<script src="./view/daily-focus-core.js?v=20261025-card-view-v2"></script>
+<script src="./view/daily-focus-core.js?v=20261027-focus-v2-private"></script>
 <script src="./view/next-review-core.js?v=20261025-invalid-date-v3"></script>
 <script src="./view/priority-save-core.js?v=20261025-card-view-v2"></script>
 <script src="./view/priority-migration-core.js?v=20261025-card-view-v2"></script>
@@ -243,6 +246,7 @@ function clean(name){return name.replace(/^(?:🚨|🔴|🟡)\s*/u,'');}
 const state={cards:[],priority:'all',search:'',list:'all',saving:new Set(),migrating:false,commandBusy:false};
 const reviewCore=window.KoyoriReviewCore;
 const focusCore=window.KoyoriDailyFocusCore;
+const focusV2=window.KoyoriFocusV2Core;
 const reviewCalendar=window.KoyoriNextReviewCore;
 const prioritySave=window.KoyoriPrioritySaveCore;
 const priorityMigration=window.KoyoriPriorityMigrationCore;
@@ -458,8 +462,11 @@ function paintFocus(){
   results.append(fail);return;
  }
  const today=reviewCalendar.todayLocal(new Date());
- for(const group of ['morning','self','waiting','undated','thinking','unverified']){
-  const items=group==='morning'?focusCore.morning(state.cards,reviewCore,reviewCalendar,today):
+ for(const group of ['morning','self','waiting','radar','quality','weekly','undated','thinking','unverified']){
+  const items=group==='morning'?focusV2.daily(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+   group==='radar'?focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+   group==='quality'?focusV2.quality(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+   group==='weekly'?focusV2.weeklyOverview(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
    group==='undated'?focusCore.undatedWaiting(state.cards,reviewCore,reviewCalendar):
    focusCore.collect(state.cards,reviewCore,group);
   el('focus-count-'+group).textContent=String(items.length);
@@ -467,7 +474,15 @@ function paintFocus(){
  document.querySelectorAll('[data-focus]').forEach(b=>
   b.setAttribute('aria-pressed',String(b.dataset.focus===focusState.group)));
  el('focus-description').textContent=focusState.group==='morning'?
-  '朝の整理：自分が次に動くカードと、次回確認日が到来した確認待ちカードを一緒に表示します。仕事の期限や今日の実施を推測しません。':
+  '今日の重点は最大4件：自分が動く仕事と、確認日が到来した委任先の仕事を優先度順に表示。今日中の完了を求めるものではありません。':
+  focusState.group==='radar'?
+  (function(){const r=focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today);const c=r.counts;
+   return !r.ready?'確認日の判定に失敗しました':
+    '確認レーダー：確認日到来'+c.due+'件／今週これから'+c.week+'件／日付なし'+c.undated+'件／日付要確認'+c.invalid+'件。日付なしは遅延とは判断しません。';})():
+  focusState.group==='quality'?
+  '点検候補：次の一手・担当者・確認日の不明点や長期間更新のないカードを表示。遅延・未実施とは断定しません。':
+  focusState.group==='weekly'?
+  '週次見直し：重点・確認・点検・構想を最大9件まで表示。過去との差分がないため「今週前進した」とは判定しません。':
   focusState.group==='undated'?
   '確認日を設定していない「次に確認する」カードを一覧します。期限切れ・催促が必要という意味ではありません。':
   '見直し対象をアクション別に表示します。確認日は正式な期限ではありません。休止カードは除外します。';
@@ -528,7 +543,10 @@ function paintFocus(){
   article.append(head,action,current,meta);weeklyCards.append(article);
  }
  const all=focusState.group==='morning'?
-  focusCore.morning(state.cards,reviewCore,reviewCalendar,today):
+  focusV2.daily(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+  focusState.group==='radar'?focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+  focusState.group==='quality'?focusV2.quality(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+  focusState.group==='weekly'?focusV2.weeklyOverview(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
   focusState.group==='undated'?undated:
   focusCore.collect(state.cards,reviewCore,focusState.group);
  for(const filter of ['due','week','none','all'])el('focus-date-'+filter).textContent=String(all.filter(({card})=>reviewCalendar.included(card.desc,filter,today)).length);
@@ -548,7 +566,7 @@ function paintFocus(){
    focusState.query&&dateEntries.length?'検索に一致するカードはありません':'該当するカードはありません';
   results.append(empty);return;
  }
- for(const {card,review,step,stepProposal,status,ball,missingInfo,priority} of entries){
+ for(const {card,review,step,stepProposal,status,ball,missingInfo,priority,radarBucket,attentionReasons,weeklyLabel} of entries){
   const row=document.createElement('div');row.className='focus-row';
   const top=document.createElement('div');top.className='focus-row-top';
   const marker=document.createElement('span');marker.className='focus-priority';
@@ -559,7 +577,10 @@ function paintFocus(){
    link.href=card.url;link.target='_blank';link.rel='noopener noreferrer';
   }
   const meta=document.createElement('div');meta.className='meta';
-  meta.textContent=(focusState.group==='morning'?
+  meta.textContent=(focusState.group==='weekly'?((weeklyLabel||'見直し対象')+' / '):'')+
+    (focusState.group==='radar'?
+    '確認状況：'+({due:'確認日到来',week:'今週',later:'それ以降',undated:'日付なし',invalid:'日付の確認が必要',unknownData:'情報不足'}[radarBucket]||'未分類')+' / ':'')+
+    (focusState.group==='morning'?
     ((review.action.includes('自分が次に動く'))?'自分が次に動く':'次回確認日が到来')+' / ':'')+
     card.listName+' / '+(review.project.join('・')||'分類未設定')+
     (ball?' / ボール：'+ball:'');
@@ -584,6 +605,10 @@ function paintFocus(){
   if(review.dataMissing)notes.push('情報取得不足');
   if(priority===null)notes.push(card.readError?'優先度取得失敗':'優先度照合中');
   if(review.manyActions)notes.push('アクション重複');
+   if(focusState.group==='quality'&&attentionReasons?.length){
+    const labels={sourceMissing:'情報取得不足',conflictingActions:'行動分類が重複',missingNextAction:'次の一手が未記載',missingOwner:'ボールが未記載',invalidReviewDate:'確認日の記載を確認',unverifiedStatus:'現況未確認',staleCandidate:'最終更新から14日以上（停滞の断定ではない）'};
+    notes.push(...attentionReasons.map(key=>labels[key]||'点検候補'));
+   }
   if(notes.length){
    const caution=document.createElement('div');caution.className='focus-caution';
    caution.textContent=notes.join(' / ');row.append(caution);
