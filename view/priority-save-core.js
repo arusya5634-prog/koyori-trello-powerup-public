@@ -50,7 +50,7 @@
       expected:match[3]==='unset'?null:match[3],requested:match[4]
     })};
   }
-  async function applyInstruction(t,cardId,request){
+  async function applyInstruction(t,cardId,request,checkedBefore){
     if(!t||typeof t.get!=='function'||typeof t.set!=='function'||
       !request||cardId!==request.cardId||
       !/^[0-9a-f]{24}$/iu.test(cardId)||!/^[A-Za-z0-9_-]{8,64}$/u.test(request.id)||
@@ -66,9 +66,15 @@
         return null;
       return {priority,receipt};
     }
+    // In the auto badge path, the same SDK turn reads the fresh card and
+    // both priority keys concurrently. Reuse those values; the second SDK
+    // read below still guards against edits before the write.
     let before;
-    try{before=await read();}catch(_){return {status:'read-failed'};}
-    if(!before)return {status:'invalid-remote'};
+    try{before=checkedBefore===undefined?await read():checkedBefore;}
+    catch(_){return {status:'read-failed'};}
+    if(!before||!valid(before.priority)||
+      (before.receipt!==null&&typeof before.receipt!=='string'))
+      return {status:'invalid-remote'};
     // A consumed request must NEVER overwrite a subsequent manual change.
     if(before.receipt===request.id)return {status:before.priority===request.requested?
       'already-applied':'superseded',value:before.priority};
@@ -126,12 +132,19 @@
     // A fresh render can use that already-fetched priority for its badge.
     if(autoAttempts.has(key))return {status:'already-attempted'};
     const pending=(async()=>{
-      let fresh;
-      try{fresh=await t.card('id','name','desc');}
-      catch(_){return {status:'card-read-failed'};}
+      let fresh,priority,receipt;
+      try{
+        [fresh,priority,receipt]=await Promise.all([
+          t.card('id','name','desc'),
+          t.get(card.id,'shared','priority',null),
+          t.get(card.id,'shared',RECEIPT,null)
+        ]);
+      }catch(_){return {status:'card-read-failed'};}
       if(!fresh||fresh.id!==card.id||fresh.name!==card.name||
         fresh.desc!==card.desc)return {status:'card-changed'};
-      return applyInstruction(t,card.id,parsed.request);
+      return applyInstruction(t,card.id,parsed.request,{
+        priority:canonical(priority),receipt:canonical(receipt)
+      });
     })().catch(()=>({status:'unverified'}));
     autoAttempts.set(key,pending);
     return pending;
