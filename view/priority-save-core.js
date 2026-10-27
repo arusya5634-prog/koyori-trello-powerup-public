@@ -95,5 +95,34 @@
     return {status:'unverified',value:after.priority};
   }
 
-  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save,instruction,applyInstruction});
+  // Chat-originated requests can be consumed when Trello next renders a card.
+  // This works only in an authorized, writable Power-Up context. It does NOT
+  // provide background execution when the Trello board is closed.
+  // Render callbacks are invoked repeatedly, so only attempt once per card
+  // and request ID for the lifetime of this connector page.
+  const autoAttempts=new Map();
+  async function autoConsume(t,card){
+    const parsed=instruction(card&&card.desc,card&&card.id);
+    if(parsed.status!=='ready')return {status:parsed.status};
+    if(!t||typeof t.card!=='function'||typeof t.getContext!=='function')
+      return {status:'not-authorized'};
+    let context;
+    try{context=t.getContext();}catch(_){return {status:'not-authorized'};}
+    if(!context||!context.member||!context.permissions||context.permissions.board!=='write'||
+      (context.card&&context.card!==card.id))return {status:'not-authorized'};
+    const key=card.id+'|'+parsed.request.id;
+    if(autoAttempts.has(key))return autoAttempts.get(key);
+    const pending=(async()=>{
+      let fresh;
+      try{fresh=await t.card('id','name','desc');}
+      catch(_){return {status:'card-read-failed'};}
+      if(!fresh||fresh.id!==card.id||fresh.name!==card.name||
+        fresh.desc!==card.desc)return {status:'card-changed'};
+      return applyInstruction(t,card.id,parsed.request);
+    })().catch(()=>({status:'unverified'}));
+    autoAttempts.set(key,pending);
+    return pending;
+  }
+
+  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save,instruction,applyInstruction,autoConsume});
 })(window);
