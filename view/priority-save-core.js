@@ -120,7 +120,11 @@
       context.permissions.card!=='write'||context.card!==card.id)
       return {status:'not-authorized'};
     const key=card.id+'|'+parsed.request.id;
-    if(autoAttempts.has(key))return autoAttempts.get(key);
+    // The connector already fetched the saved priority for this render.
+    // After any first attempt (including ambiguous outcomes), do not read
+    // or write the same queued request again within this connector page.
+    // A fresh render can use that already-fetched priority for its badge.
+    if(autoAttempts.has(key))return {status:'already-attempted'};
     const pending=(async()=>{
       let fresh;
       try{fresh=await t.card('id','name','desc');}
