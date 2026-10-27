@@ -141,11 +141,11 @@
             const core=window.KoyoriPrioritySaveCore;
             if(card&&core&&typeof core.autoConsume==='function'){
               const result=await core.autoConsume(t,card);
-              // Re-read for display. A cached success from an earlier
-              // render must NEVER conceal a subsequent manual priority edit.
-              if(result.status==='saved'||result.status==='already-applied'){
-                try{saved=await t.get('card','shared','priority',null);}catch(_){}
-              }
+              // A fresh post-write SDK verification is included in the
+              // result when a request is saved. Reuse it without another
+              // round-trip. Later renders still read the current priority
+              // at the start and never replay the old request.
+              if(result.status==='saved')saved=result.value;
             }
             // Scan-friendly card order: priority first, then ball owner.
             return priorityBadgesFor(card&&card.name,saved)
