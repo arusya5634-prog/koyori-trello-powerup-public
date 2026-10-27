@@ -183,6 +183,12 @@ section[hidden]{display:none}
 <button id="migration-run" type="button" disabled>旧記号の優先度をPower-Upに保存・照合</button>
 <div id="migration-report" class="meta" role="status" aria-live="polite">この操作ではまだタイトルは変更しません。引継ぎが全件確認できた後、タイトルの記号を削除します。</div>
 </div>
+<div class="migration-box" id="priority-command-box" hidden>
+<strong>こよりからの優先度反映依頼</strong>
+<div id="priority-command-list" class="meta"></div>
+<button type="button" id="priority-command-run" disabled>確認済みの依頼をまとめて反映</button>
+<div id="priority-command-report" role="status" aria-live="polite" class="meta">Power-Up共有データへ保存し、再読込で確認します。カード説明文だけでは完了になりません。</div>
+</div>
 <div class="stats" role="group" aria-label="優先度絞り込み">
 <button class="stat" data-priority="urgent" aria-pressed="false"><strong id="count-urgent">—</strong><span>🚨🔴 急ぎ</span></button>
 <button class="stat" data-priority="soon" aria-pressed="false"><strong id="count-soon">—</strong><span>🟡 早め</span></button>
@@ -234,7 +240,7 @@ function legacyPriority(name){
 }
 function effective(c){return Object.prototype.hasOwnProperty.call(LEVELS,c.saved)?c.saved:c.legacy;}
 function clean(name){return name.replace(/^(?:🚨|🔴|🟡)\s*/u,'');}
-const state={cards:[],priority:'all',search:'',list:'all',saving:new Set(),migrating:false};
+const state={cards:[],priority:'all',search:'',list:'all',saving:new Set(),migrating:false,commandBusy:false};
 const reviewCore=window.KoyoriReviewCore;
 const focusCore=window.KoyoriDailyFocusCore;
 const reviewCalendar=window.KoyoriNextReviewCore;
@@ -280,14 +286,14 @@ function paint(){
   select.append(option('auto','タイトルに準拠 ('+LEVELS[c.legacy].name+')'));
   for(const key of Object.keys(LEVELS))select.append(option(key,LEVELS[key].mark+' '+LEVELS[key].name));
   select.value=Object.prototype.hasOwnProperty.call(LEVELS,c.saved)?c.saved:'auto';
-  select.disabled=state.migrating||c.readPending||c.readError||state.saving.has(c.id);
+  select.disabled=state.migrating||state.commandBusy||c.readPending||c.readError||state.saving.has(c.id);
   select.addEventListener('change',()=>savePriority(c,select));
   row.append(badge,main,select);
   list.append(row);
  }
 }
 async function savePriority(c,select){
- if(!t||state.migrating||c.readPending||c.readError||state.saving.has(c.id))return;
+ if(!t||state.migrating||state.commandBusy||c.readPending||c.readError||state.saving.has(c.id))return;
  const chosen=select.value;
  const next=chosen==='auto'?null:chosen;
  if(next===c.saved)return;
@@ -314,6 +320,93 @@ document.querySelectorAll('.stat').forEach(b=>b.addEventListener('click',()=>{st
 el('search').addEventListener('input',e=>{state.search=e.target.value.toLocaleLowerCase().trim();paint();});
 el('list').addEventListener('change',e=>{state.list=e.target.value;paint();});
 
+function pendingPriorityRequests(){
+ return state.cards.map(card=>({card,parsed:prioritySave.instruction(card.desc,card.id)}))
+  .filter(item=>item.parsed.status!=='none');
+}
+function paintPriorityRequests(){
+ const queue=pendingPriorityRequests();
+ const box=el('priority-command-box'),run=el('priority-command-run');
+ box.hidden=!queue.length;
+ if(!queue.length)return;
+ const list=el('priority-command-list');
+ list.replaceChildren();
+ for(const {card,parsed} of queue){
+  const line=document.createElement('div');
+  if(parsed.status==='ready'){
+   const request=parsed.request;
+   const expected=request.expected===null?'未設定':LEVELS[request.expected].name;
+   line.textContent=card.name+'｜'+expected+' → '+LEVELS[request.requested].name+
+    (card.readError?'（優先度の取得失敗）':card.readPending?'（取得中）':'');
+  }else line.textContent=card.name+'｜指示形式・カードIDに問題があります（適用対象外）';
+  list.append(line);
+ }
+ run.disabled=state.commandBusy||state.migrating||state.saving.size>0||state.cards.some(c=>c.readPending)||
+  !queue.some(({card,parsed})=>parsed.status==='ready'&&!card.readError);
+}
+async function applyPendingPriorityRequests(){
+ if(!t||state.commandBusy||state.migrating||state.saving.size>0||state.cards.some(c=>c.readPending))return;
+ const queue=pendingPriorityRequests().filter(x=>x.parsed.status==='ready'&&!x.card.readError);
+ if(!queue.length)return;
+ state.commandBusy=true;paint();paintMigration();paintPriorityRequests();
+ const report=el('priority-command-report');
+ report.textContent='現在のカードを再取得し、未反映の指示だけ照合しています…';
+ let fresh;
+ try{
+  fresh=await t.cards('id','name','idList','desc');
+  if(!Array.isArray(fresh))throw Error('fresh card read unavailable');
+ }catch(_){
+  report.textContent='カード再取得失敗のため何も変更していません。';
+  state.commandBusy=false;paintPriorityRequests();return;
+ }
+ const byId=new Map(fresh.map(c=>[c.id,c]));
+ const statuses=[];
+ for(const {card,parsed} of queue){
+  const latest=byId.get(card.id);
+  if(!latest||latest.name!==card.name||latest.idList!==card.idList||
+    latest.desc!==card.desc){
+   statuses.push({name:card.name,status:'card-changed'});continue;
+  }
+  // Each task can change while preceding cards are being saved. Re-fetch
+  // immediately before every individual write, not only once per batch.
+  let justInTime;
+  try{
+   const currentBoard=await t.cards('id','name','idList','desc');
+   if(!Array.isArray(currentBoard))throw Error('missing card snapshot');
+   justInTime=currentBoard.find(c=>c.id===card.id);
+  }catch(_){
+   statuses.push({name:card.name,status:'card-read-failed'});
+   card.readError=true;continue;
+  }
+  if(!justInTime||justInTime.name!==card.name||
+    justInTime.idList!==card.idList||justInTime.desc!==card.desc){
+   statuses.push({name:card.name,status:'card-changed'});
+   card.readError=true;continue;
+  }
+  let result;
+  try{result=await prioritySave.applyInstruction(t,card.id,parsed.request);}
+  catch(_){result={status:'unverified'};}
+  if(Object.prototype.hasOwnProperty.call(result,'value')&&
+    prioritySave.valid(result.value)&&
+    (result.status==='saved'||result.status==='already-applied'||
+     result.status==='conflict'||result.status==='superseded')){
+   card.saved=result.value;
+  }
+  if(result.status==='saved'||result.status==='already-applied')
+   card.priorityRequestDone=true;
+  if(!['saved','already-applied','conflict','superseded'].includes(result.status))
+   card.readError=true; // Never allow a speculative retry in this open modal.
+  statuses.push({name:card.name,status:result.status});
+ }
+ const success=statuses.filter(x=>x.status==='saved'||x.status==='already-applied').length;
+ const caution=statuses.filter(x=>x.status!=='saved'&&x.status!=='already-applied');
+ report.textContent='Power-Up照合成功 '+success+'/'+statuses.length+'件。'+
+  (caution.length?'要確認：'+caution.map(x=>x.name+'（'+x.status+'）').join('、'):
+    '結果を再読込して確認しました。');
+ state.commandBusy=false;
+ paint();paintOverview();paintFocus();paintMigration();paintPriorityRequests();
+}
+el('priority-command-run').addEventListener('click',applyPendingPriorityRequests);
 function paintMigration(){
  if(!reviewState.loaded||reviewState.loadError)return;
  const withPrefix=state.cards.filter(c=>c.legacy!=='normal');
@@ -323,10 +416,10 @@ function paintMigration(){
  const pending=withPrefix.filter(c=>c.readPending||c.readError).length;
  el('migration-count').textContent='旧タイトル：'+withPrefix.length+'件／優先度引継ぎ確認済み：'+copied+'件'+
   (pending?'／未照合・取得失敗：'+pending+'件':'');
- el('migration-run').disabled=state.migrating||state.cards.some(c=>c.readPending)||!t;
+ el('migration-run').disabled=state.migrating||state.commandBusy||state.cards.some(c=>c.readPending)||!t;
 }
 el('migration-run').addEventListener('click',async()=>{
- if(!t||state.migrating||state.cards.some(c=>c.readPending))return;
+ if(!t||state.migrating||state.commandBusy||state.cards.some(c=>c.readPending))return;
  state.migrating=true;paint();paintMigration();
  const status=el('migration-report');status.className='meta';
  status.textContent='旧記号の優先度を一件ずつ照合中。タイトルは変更していません…';
@@ -679,7 +772,7 @@ async function main(){
   // Show all read-only views as soon as card data arrives. Background priority
   // reads must not block action/review search or expose premature editing.
   reviewState.loaded=true;
-  paint();paintOverview();paintFocus();paintReview();paintMigration();
+  paint();paintOverview();paintFocus();paintReview();paintMigration();paintPriorityRequests();
   showMessage('カード情報を表示しました。優先度の保存値を照合中…');
   const todo=state.cards.slice();
   // Limit concurrent reads; never overwrite values we have not successfully read.
@@ -696,7 +789,7 @@ async function main(){
   }));
   if(state.cards.some(c=>c.readError))showMessage('一部の優先度が読み取れませんでした。そのカードの変更は無効にしています。',true);
   else showMessage('優先度の現在値まで確認しました。');
-  paint();paintMigration();
+  paint();paintMigration();paintPriorityRequests();
   paintOverview();paintFocus();
   paintReview();
  }catch(e){
