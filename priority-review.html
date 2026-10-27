@@ -85,6 +85,12 @@ section[hidden]{display:none}
 .focus-status{font-size:12px;line-height:1.6;margin:3px 0 2px;overflow-wrap:anywhere}
 #focus-results{max-height:none;overflow:visible}
 .focus-row{padding:9px 5px;border-bottom:1px solid #dfe1e6}
+.focus-paging{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0 2px;font-size:12px}
+.focus-paging[hidden],.focus-paging button[hidden]{display:none}
+.focus-paging button{border:1px solid #0c66e4;background:transparent;color:#0c66e4;border-radius:6px;padding:8px 12px;font:inherit;cursor:pointer}
+.focus-paging button:hover{background:#deebff}
+.focus-paging button:focus-visible{outline:2px solid #0c66e4;outline-offset:2px}
+@media(prefers-color-scheme:dark){.focus-paging button{border-color:#85b8ff;color:#85b8ff}.focus-paging button:hover{background:#243c54}}
 .focus-row-top{display:flex;gap:7px;align-items:flex-start}
 .focus-priority{width:21px;flex:none;text-align:center}
 .focus-title{flex:1;min-width:0}
@@ -181,6 +187,11 @@ section[hidden]{display:none}
 </div>
 <div id="focus-count" class="meta" aria-live="polite">読み込み中…</div>
 <div id="focus-results" aria-live="polite"><div class="empty">カード情報の読み込み中…</div></div>
+<div id="focus-paging" class="focus-paging" role="group" aria-label="表示するカード数" hidden>
+<button id="focus-more" type="button" hidden>次の5件を表示</button>
+<button id="focus-all" type="button" hidden>該当カードをすべて表示</button>
+<button id="focus-less" type="button" hidden>最初の5件に戻す</button>
+</div>
 <footer>現在地・次の一手・ボールはカード説明欄の明記された情報だけを表示します。「情報未記載」は記録がないという意味で、未着手や遅延を意味しません。次回確認日は正式な仕事の締切ではありません。</footer>
 </section>
 <section id="priority-pane" hidden>
@@ -258,7 +269,9 @@ const priorityMigration=window.KoyoriPriorityMigrationCore;
 const ACTIONS=reviewCore.ACTIONS;
 const analysisEntry=/(?:^\?|&)entry=analysis(?:&|$)/u.test((window.location&&window.location.search)||'');
 const reviewState={view:analysisEntry?'priority':'focus',query:'',list:'all',kind:'all',loaded:false,loadError:false};
-const focusState={group:'morning',query:'',date:'all',missingOnly:false};
+const focusState={group:'morning',query:'',date:'all',missingOnly:false,visibleLimit:5};
+const FOCUS_BATCH_SIZE=5;
+const resetFocusLimit=()=>{focusState.visibleLimit=FOCUS_BATCH_SIZE;};
 const focusGuides=Object.freeze({"morning":{"name":"朝の整理","short":"今日の重点候補を最大4件表示","body":"自分が動く仕事と確認日が到来した委任先の仕事から、優先度順に最大4件を表示します。今日中の完了を求めるものではありません。"},"self":{"name":"自分が動く","short":"自分が次に行動するカード","body":"「自分が次に動く」カードを一覧します。表示件数は今日中に終える仕事の量ではありません。"},"waiting":{"name":"確認待ち","short":"相手の回答・作業を待つカード","body":"「次に確認する」カードを一覧します。確認日がまだ来ていないものや日付未設定のものも含みます。"},"radar":{"name":"確認レーダー","short":"確認待ちを確認日と記録状況で整理","body":"確認待ちを確認日到来・今週これから・それ以降・日付なし・日付要確認などに分けます。次回確認日は仕事の締切ではありません。"},"quality":{"name":"点検候補","short":"情報不足や長期間未更新の点検候補","body":"次の一手・担当者・確認日の情報不足や長期間更新のないカードを表示します。停滞・遅延・未実施とは断定しません。"},"weekly":{"name":"週次見直し","short":"重点・確認・点検・構想の候補を最大9件","body":"重点・確認待ち・点検候補・構想を重複なく最大9件表示します。過去との差分がないため「今週前進した」とは判定しません。"},"undated":{"name":"日付なし","short":"次回確認日のない確認待ちカード","body":"「次に確認する」のうち次回確認日が未設定のカードを表示します。期限切れや催促の指示ではありません。"},"thinking":{"name":"考える","short":"検討・構想に分類されたカード","body":"「検討・構想」カードを一覧します。直ちに実行すべき仕事という意味ではありません。"},"unverified":{"name":"現況未確認","short":"状況の記録を確認したいカード","body":"現在地や状況に未確認の記載があるカードを表示します。作業が止まっていると判定したものではありません。"}});
 const dateGuides=Object.freeze({"due":{"name":"確認日到来","short":"次回確認日が今日以前のカード","body":"次回確認日が今日以前のもの。正式な納期や遅延の判定ではありません。"},"week":{"name":"今週これから","short":"次回確認日が明日から日曜までのカード","body":"次回確認日が今日より後で、今週の日曜日までのものです。"},"none":{"name":"日付未設定","short":"次回確認日の記載がないカード","body":"次回確認日の記載がないもの。催促すべきという意味ではありません。"},"all":{"name":"すべて","short":"確認日の状態で絞り込まない","body":"次回確認日の状態を問わず表示します。日付の不正もここでは除外しません。"}});
 document.querySelectorAll('[data-focus]').forEach(b=>{
@@ -466,6 +479,8 @@ const deriveAlerts=(c,clock=Date.now())=>reviewCore.alerts(c,effective(c),clock)
 function paintFocus(){
  if(!reviewState.loaded)return;
  const results=el('focus-results');results.replaceChildren();
+ const paging=el('focus-paging');paging.hidden=true;
+ el('focus-more').hidden=true;el('focus-all').hidden=true;el('focus-less').hidden=true;
  if(reviewState.loadError){
   el('weekly-undated-tip').hidden=true;
   el('invalid-review-warning').hidden=true;
@@ -494,6 +509,12 @@ function paintFocus(){
   const c=radar.counts;
   detail+=' '+(!radar.ready?'確認日の判定に失敗しました。':
    '内訳：確認日到来'+c.due+'件／今週これから'+c.week+'件／日付なし'+c.undated+'件／日付要確認'+c.invalid+'件。');
+ }
+ if(focusState.group==='radar'||focusState.group==='undated'){
+  const waiting=focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items;
+  const undated=waiting.filter(x=>x.radarBucket==='undated');
+  const explicit=undated.filter(x=>reviewCalendar.condition(x.card.desc).explicit).length;
+  if(undated.length)detail+=' 日付なし'+undated.length+'件のうち、確認条件の明記あり'+explicit+'件／記載なし・要確認'+(undated.length-explicit)+'件。日付や催促を自動設定しません。';
  }
  el('focus-description').textContent=detail;
  const dateGuide=dateGuides[focusState.date]||dateGuides.all;
@@ -571,15 +592,25 @@ function paintFocus(){
  const entries=dateEntries.filter(({card,missingInfo})=>
   filterCore.matches(card,{query:focusState.query})&&(!focusState.missingOnly||missingInfo));
  const missingPriority=all.filter(({priority})=>priority===null).length;
- el('focus-count').textContent='表示：'+entries.length+'件／アクション該当：'+all.length+'件'+
+ const displayed=Math.min(entries.length,focusState.visibleLimit);
+ el('focus-count').textContent='表示：'+displayed+'/'+entries.length+'件／アクション該当：'+all.length+'件'+
   (missingPriority?'（優先度未照合：'+missingPriority+'件）':'');
+ paging.hidden=entries.length<=FOCUS_BATCH_SIZE;
+ if(!paging.hidden){
+  const remaining=entries.length-displayed;
+  el('focus-more').hidden=remaining===0;
+  el('focus-more').textContent='次の'+Math.min(FOCUS_BATCH_SIZE,remaining)+'件を表示（残り'+remaining+'件）';
+  el('focus-all').hidden=remaining===0;
+  el('focus-all').textContent='全'+entries.length+'件を表示';
+  el('focus-less').hidden=displayed<=FOCUS_BATCH_SIZE;
+ }
  if(!entries.length){
   const empty=document.createElement('div');empty.className='empty';
   empty.textContent=focusState.missingOnly&&!incomplete?'現在地と次の一手の未記載カードはありません':
    focusState.query&&dateEntries.length?'検索に一致するカードはありません':'該当するカードはありません';
   results.append(empty);return;
  }
- for(const {card,review,step,stepProposal,status,ball,missingInfo,priority,radarBucket,attentionReasons,weeklyLabel} of entries){
+ for(const {card,review,step,stepProposal,status,ball,missingInfo,priority,radarBucket,attentionReasons,weeklyLabel} of entries.slice(0,displayed)){
   const row=document.createElement('div');row.className='focus-row';
   const top=document.createElement('div');top.className='focus-row-top';
   const marker=document.createElement('span');marker.className='focus-priority';
@@ -610,11 +641,18 @@ function paintFocus(){
   const followup=document.createElement('div');followup.className='meta';
   followup.textContent=dateInfo.invalid?'次回確認日：記載形式を確認してください':dateInfo.date?'次回確認日：'+dateInfo.date+(dateStatus==='due'?'（確認日到来・実施状況は未判定）':''):'次回確認日：未設定';
   row.append(followup);
+  const condition=reviewCalendar.condition(card.desc);
+  if(condition.explicit&&(focusState.group==='radar'||focusState.group==='undated'||focusState.group==='waiting')){
+   const conditionText=document.createElement('div');conditionText.className='meta';
+   conditionText.textContent='確認条件（記載済み）：'+condition.text;
+   row.append(conditionText);
+  }
   const notes=[];
   if(review.unverified)notes.push('⚠ 現況未確認（整理案の可能性）');
   if(missingInfo)notes.push('現在地・次の一手に未記載あり（進捗遅延ではない）');
   if(review.confirmedLater)notes.push('本人確認の記録あり（完了判定ではない）');
   if(dateInfo.invalid)notes.push('確認日の記載が不正または競合');
+   if(condition.ambiguous)notes.push('確認条件の記載が複数・不明確（催促は自動判断しません）');
   if(review.dataMissing)notes.push('情報取得不足');
   if(priority===null)notes.push(card.readError?'優先度取得失敗':'優先度照合中');
   if(review.manyActions)notes.push('アクション重複');
@@ -630,26 +668,29 @@ function paintFocus(){
  }
 }
 document.querySelectorAll('[data-focus]').forEach(b=>b.addEventListener('click',()=>{
- focusState.group=b.dataset.focus;focusState.date=focusState.group==='undated'?'none':'all';
+ focusState.group=b.dataset.focus;focusState.date=focusState.group==='undated'?'none':'all';resetFocusLimit();
  focusState.missingOnly=false;paintFocus();
 }));
 el('weekly-undated-open').addEventListener('click',()=>{
- focusState.group='undated';focusState.date='none';focusState.missingOnly=false;
+ focusState.group='undated';focusState.date='none';focusState.missingOnly=false;resetFocusLimit();
  focusState.query='';el('focus-search').value='';paintFocus();
 });
 el('focus-missing').addEventListener('click',()=>{
- focusState.missingOnly=!focusState.missingOnly;paintFocus();
+ focusState.missingOnly=!focusState.missingOnly;resetFocusLimit();paintFocus();
 });
 document.querySelectorAll('[data-review-date]').forEach(b=>b.addEventListener('click',()=>{
- focusState.date=b.dataset.reviewDate;paintFocus();
+ focusState.date=b.dataset.reviewDate;resetFocusLimit();paintFocus();
 }));
 el('focus-search').addEventListener('input',e=>{
- focusState.query=e.target.value.trim();paintFocus();
+ focusState.query=e.target.value.trim();resetFocusLimit();paintFocus();
 });
 el('focus-clear').addEventListener('click',()=>{
- focusState.query='';focusState.missingOnly=false;
+ focusState.query='';focusState.missingOnly=false;resetFocusLimit();
  el('focus-search').value='';paintFocus();
 });
+el('focus-more').addEventListener('click',()=>{focusState.visibleLimit+=FOCUS_BATCH_SIZE;paintFocus();});
+el('focus-all').addEventListener('click',()=>{focusState.visibleLimit=state.cards.length;paintFocus();});
+el('focus-less').addEventListener('click',()=>{resetFocusLimit();paintFocus();});
 function paintOverview(){
  if(!reviewState.loaded||reviewState.loadError)return;
  const active=state.cards.filter(c=>!deriveReview(c).paused);
