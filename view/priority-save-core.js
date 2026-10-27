@@ -104,12 +104,21 @@
   async function autoConsume(t,card){
     const parsed=instruction(card&&card.desc,card&&card.id);
     if(parsed.status!=='ready')return {status:parsed.status};
-    if(!t||typeof t.card!=='function'||typeof t.getContext!=='function')
+    if(!t||typeof t.card!=='function'||typeof t.getContext!=='function'||
+      typeof t.isMemberSignedIn!=='function'||
+      typeof t.memberCanWriteToModel!=='function')return {status:'not-authorized'};
+    let context,canWrite;
+    try{
+      context=t.getContext();
+      canWrite=t.isMemberSignedIn()===true&&t.memberCanWriteToModel('card')===true;
+    }catch(_){return {status:'not-authorized'};}
+    // Trello recommends memberCanWriteToModel('card') before every shared set.
+    // Context fields also defend against cross-card, anonymous or board-read
+    // only execution. Do not guess that a missing card context is writable.
+    if(!canWrite||!context||!context.member||context.member==='notLoggedIn'||
+      !context.permissions||context.permissions.board!=='write'||
+      context.permissions.card!=='write'||context.card!==card.id)
       return {status:'not-authorized'};
-    let context;
-    try{context=t.getContext();}catch(_){return {status:'not-authorized'};}
-    if(!context||!context.member||!context.permissions||context.permissions.board!=='write'||
-      (context.card&&context.card!==card.id))return {status:'not-authorized'};
     const key=card.id+'|'+parsed.request.id;
     if(autoAttempts.has(key))return autoAttempts.get(key);
     const pending=(async()=>{
