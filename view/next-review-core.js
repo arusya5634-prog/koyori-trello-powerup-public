@@ -17,6 +17,22 @@
   if(invalid||new Set(dates).size>1)return {date:null,invalid:true};
   return {date:dates[0]||null,invalid:false};
  }
+ // An explicitly written recheck *condition* is a separate field
+ // from an optional review date. Never infer conditions from next steps.
+ function condition(desc){
+  const values=[];
+  let empty=false;
+  for(const line of String(desc||'').split(/\r?\n/u)){
+   const match=line.match(/^\s*(?:[-*]\s*)?(?:\*\*)?(?:確認条件|再確認条件|確認契機)(?:\*\*)?\s*[:：]\s*(.*?)\s*$/u);
+   if(!match)continue;
+   const value=match[1].trim();
+   if(!value||/^(?:未設定|未確認|なし|[-—－])$/u.test(value))empty=true;
+   else values.push(value);
+  }
+  const distinct=[...new Set(values)];
+  if(empty||distinct.length>1)return {text:null,explicit:false,ambiguous:true};
+  return {text:distinct[0]||null,explicit:distinct.length===1,ambiguous:false};
+ }
  function todayLocal(d=new Date()){
   return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
  }
@@ -38,5 +54,5 @@
   const b=bucket(desc,today);
   return filter==='all'||b===filter;
  }
- root.KoyoriNextReviewCore=Object.freeze({valid,inspect,todayLocal,weekEnd,bucket,included});
+ root.KoyoriNextReviewCore=Object.freeze({valid,inspect,condition,todayLocal,weekEnd,bucket,included});
 })(window);
