@@ -294,5 +294,102 @@
   return {ready:true,items,changeEvidenceAvailable:false};
  }
 
- root.KoyoriFocusV2Core=Object.freeze({daily,radar,thinking,quality,weekly,weeklyOverview});
+
+ // PRIVATE preview candidate for a browser-only read of the current Trello
+ // card snapshot. It intentionally does NOT retrieve historic board actions:
+ // the SDK card feed cannot establish complete activity pagination.
+ function datedNextAction(desc,today){
+  const lines=String(desc||'').split(/\r?\n/u),groups=[];
+  const dateValid=d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/u.test(d)&&
+   Number.isFinite(Date.parse(d+'T00:00:00Z'))&&
+   new Date(d+'T00:00:00Z').toISOString().slice(0,10)===d;
+  let section={date:null,title:'',latest:false,steps:[]};
+  groups.push(section);
+  for(const line of lines){
+   const header=line.match(/^\s*#{1,6}\s+(.+?)\s*$/u);
+   if(header){
+    const title=header[1],rawDate=title.match(/20\d{2}-\d{2}-\d{2}/u)?.[0]??null;
+    section={date:dateValid(rawDate)?rawDate:null,title,
+     latest:/(?:最新状況|最新更新)/u.test(title),steps:[]};
+    groups.push(section);continue;
+   }
+   const match=line.match(/^\s*(?:[-*]\s*)?(?:\*\*)?次の一手(?:[（(][^）)]*[）)])?(?:\*\*)?\s*[:：]\s*(.*?)\s*$/u);
+   if(match)section.steps.push(match[1].trim());
+  }
+  const distinct=[...new Set(groups.flatMap(x=>x.steps))];
+  if(!dateValid(today))return {value:null,source:'unverified',date:null,ambiguous:distinct.length>1};
+  if(distinct.length<2)return {value:distinct[0]||null,source:distinct.length?'single-record':'unverified',
+   date:null,ambiguous:false};
+  const type=g=>g.latest?'dated-latest-note':/本人確認/u.test(g.title)?
+   'dated-confirmed-note':/表示用項目整備/u.test(g.title)?
+   'dated-display-setup':null;
+  if(groups.some(g=>type(g)&&g.date>today&&g.steps.some(Boolean)))
+   return {value:null,source:'unverified',date:null,ambiguous:true};
+  const available=groups.filter(g=>type(g)&&g.date&&g.date<=today&&
+   g.steps.length===1&&g.steps[0]&&!/整理案|実施状況未確認/u.test(g.steps[0]));
+  if(!available.length)return {value:null,source:'unverified',date:null,ambiguous:true};
+  const maximum=available.map(x=>x.date).sort().at(-1);
+  const winners=available.filter(x=>x.date===maximum);
+  if(winners.length!==1)return {value:null,source:'unverified',date:null,ambiguous:true};
+  const winner=winners[0],value=winner.steps[0];
+  if(groups.some(g=>g!==winner&&g.steps.some(x=>x!==value)&&
+   (!g.date||g.date>=winner.date)))
+   return {value:null,source:'unverified',date:null,ambiguous:true};
+  return {value,source:type(winner),date:winner.date,ambiguous:true};
+ }
+ function weeklyDecisionCards(cards,reviewCore,focusCore,calendar,today,limit=4){
+  if(!calendar?.valid?.(today)||!Array.isArray(cards))
+   return {ready:false,items:[],counts:null,historyAvailable:false};
+  const cap=Number.isInteger(limit)&&limit>=1&&limit<=4?limit:4;
+  const seen=new Set(),buckets={reached:[],quality:[],condition:[],undated:[],future:[]};
+  for(const card of cards){
+   if(!card?.id||seen.has(card.id))continue;
+   seen.add(card.id);
+   const review=reviewCore.derive(card);
+   if(review.paused||!review.action.includes('次に確認する'))continue;
+   const info=calendar.inspect(card.desc),cond=calendar.condition(card.desc);
+   const provenance=datedNextAction(card.desc,today);
+   const step=provenance.ambiguous?provenance.value:focusCore.nextStep(card.desc);
+   const owner=focusCore.ballOwner(card.desc);
+   const quality=review.dataMissing||review.manyActions||info.invalid||cond.ambiguous||
+    !focusCore.nextStep(card.desc)||!owner;
+   const reached=!info.invalid&&info.date&&info.date<=today;
+   const kind=reached?'review-date-reached':quality?'quality-review':
+    info.date?'scheduled':cond.explicit?'condition-wait':'cadence-undecided';
+   const item={card,review,step:step||null,stepSource:provenance.ambiguous?
+    provenance.source:step?'single-record':'unverified',
+    stepDate:provenance.ambiguous?provenance.date:null,
+    ambiguous:provenance.ambiguous,
+    decisionKind:kind,
+    decisionLabel:reached?'確認日到来':quality?'記録の確認が必要':
+     kind==='condition-wait'?'条件成立時に確認':
+     kind==='scheduled'?'確認日を待つ':'確認契機を検討',
+    reviewNow:reached||quality,condition:cond.explicit?cond.text:null,
+    priority:focusCore.priorityKey(card),ball:owner||null,status:null,missingInfo:review.dataMissing,
+    stepProposal:false,actionExecutionVerified:false};
+   const target=reached?'reached':quality?'quality':kind==='condition-wait'?
+    'condition':kind==='scheduled'?'future':'undated';
+   buckets[target].push(item);
+  }
+  const byId=(a,b)=>String(a.card.id).localeCompare(String(b.card.id));
+  const byDate=(a,b)=>calendar.inspect(a.card.desc).date.localeCompare(
+   calendar.inspect(b.card.desc).date)||byId(a,b);
+  buckets.reached.sort(byDate);buckets.quality.sort(byId);
+  buckets.condition.sort(byId);buckets.undated.sort(byId);buckets.future.sort(byDate);
+  // A single optional cadence candidate at most. No age-based urgency.
+  const monday=new Date(today+'T00:00:00Z');
+  monday.setUTCDate(monday.getUTCDate()-(monday.getUTCDay()+6)%7);
+  const rotation=buckets.undated.length?
+   Math.abs(Math.floor(monday.getTime()/604800000))%buckets.undated.length:0;
+  const optional=buckets.undated.slice(rotation).concat(buckets.undated.slice(0,rotation));
+  const items=[...buckets.reached,...buckets.quality,...buckets.condition,
+   ...optional.slice(0,1)].slice(0,cap);
+  return {ready:true,items,counts:Object.freeze({
+   reached:buckets.reached.length,quality:buckets.quality.length,
+   condition:buckets.condition.length,undated:buckets.undated.length,
+   future:buckets.future.length}),
+   historyAvailable:false,mutatesTrello:false};
+ }
+
+ root.KoyoriFocusV2Core=Object.freeze({daily,radar,thinking,quality,weekly,weeklyOverview,weeklyDecisionCards,datedNextAction});
 })(window);
