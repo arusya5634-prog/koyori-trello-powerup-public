@@ -165,6 +165,16 @@ input,select{font-size:15px;padding:10px}
 .weekly-card-open,.weekly-review button{font-size:14px}
 .invalid-review-warning,.invalid-review-warning a{font-size:14px;line-height:1.7}
 @media(max-width:650px){.focus-toolbar{flex-wrap:wrap}.focus-toolbar input{flex-basis:100%}.focus-guide{min-width:0}}
+
+/* P2: Visual grouping only. All existing data-focus actions stay unchanged. */
+.focus-choices{display:flex;flex-direction:column;gap:13px;margin:12px 0}
+.focus-choice-group{min-width:0}
+.focus-choice-group+.focus-choice-group{border-top:1px solid #dfe1e6;padding-top:12px}
+.focus-choice-label{font-size:15px;line-height:1.5;font-weight:700;margin:0 0 7px;color:inherit}
+.focus-choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.focus-choice-grid-four{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:700px){.focus-choice-grid,.focus-choice-grid-four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-color-scheme:dark){.focus-choice-group+.focus-choice-group{border-top-color:#454f59}}
 </style>
 </head>
 <body>
@@ -191,16 +201,31 @@ input,select{font-size:15px;padding:10px}
 </div>
 <div id="invalid-review-warning" class="invalid-review-warning" role="status" hidden></div>
 <div class="focus-choices" role="group" aria-label="今日の見直し項目">
+<section class="focus-choice-group" role="group" aria-labelledby="focus-group-daily">
+<h3 class="focus-choice-label" id="focus-group-daily">日常の実行・確認</h3>
+<div class="focus-choice-grid">
 <button type="button" data-focus="morning" aria-pressed="true"><strong id="focus-count-morning">—</strong>朝の整理</button>
 <button type="button" data-focus="self" aria-pressed="false"><strong id="focus-count-self">—</strong>自分が動く</button>
 <button type="button" data-focus="waiting" aria-pressed="false"><strong id="focus-count-waiting">—</strong>確認待ち</button>
+</div>
+</section>
+<section class="focus-choice-group" role="group" aria-labelledby="focus-group-audit">
+<h3 class="focus-choice-label" id="focus-group-audit">見落とし・例外点検</h3>
+<div class="focus-choice-grid focus-choice-grid-four">
 <button type="button" data-focus="radar" aria-pressed="false"><strong id="focus-count-radar">—</strong>確認レーダー</button>
 <button type="button" data-focus="quality" aria-pressed="false"><strong id="focus-count-quality">—</strong>点検候補</button>
-<button type="button" data-focus="weekly" aria-pressed="false"><strong id="focus-count-weekly">—</strong>週次見直し</button>
-<button type="button" data-focus="decision" aria-pressed="false"><strong id="focus-count-decision">—</strong>判断候補</button>
 <button type="button" data-focus="undated" aria-pressed="false"><strong id="focus-count-undated">—</strong>日付なし</button>
-<button type="button" data-focus="thinking" aria-pressed="false"><strong id="focus-count-thinking">—</strong>考える</button>
 <button type="button" data-focus="unverified" aria-pressed="false"><strong id="focus-count-unverified">—</strong>現況未確認</button>
+</div>
+</section>
+<section class="focus-choice-group" role="group" aria-labelledby="focus-group-plan">
+<h3 class="focus-choice-label" id="focus-group-plan">判断・計画</h3>
+<div class="focus-choice-grid">
+<button type="button" data-focus="decision" aria-pressed="false"><strong id="focus-count-decision">—</strong>判断候補</button>
+<button type="button" data-focus="weekly" aria-pressed="false"><strong id="focus-count-weekly">—</strong>週次見直し</button>
+<button type="button" data-focus="thinking" aria-pressed="false"><strong id="focus-count-thinking">—</strong>考える</button>
+</div>
+</section>
 </div>
 <div id="weekly-undated-tip" class="focus-header weekly-review" hidden>
 <div class="weekly-review-title">今週、状況を見直しておきたいカード</div>
