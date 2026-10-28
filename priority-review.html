@@ -217,6 +217,7 @@ input,select{font-size:15px;padding:10px}
 <div class="focus-toolbar">
 <input id="focus-search" type="search" placeholder="カード・次の一手・分類を検索" aria-label="今日の見直し検索">
 <button id="focus-missing" type="button" aria-pressed="false">情報未記載だけ（—）</button>
+<button id="focus-condition-only" type="button" aria-pressed="false" hidden>確認条件ありだけ（—）</button>
 <button id="focus-clear" type="button">クリア</button>
 </div>
 <div id="focus-count" class="meta" aria-live="polite">読み込み中…</div>
@@ -303,7 +304,7 @@ const priorityMigration=window.KoyoriPriorityMigrationCore;
 const ACTIONS=reviewCore.ACTIONS;
 const analysisEntry=/(?:^\?|&)entry=analysis(?:&|$)/u.test((window.location&&window.location.search)||'');
 const reviewState={view:analysisEntry?'priority':'focus',query:'',list:'all',kind:'all',loaded:false,loadError:false};
-const focusState={group:'morning',query:'',date:'all',missingOnly:false,visibleLimit:5};
+const focusState={group:'morning',query:'',date:'all',missingOnly:false,conditionOnly:false,visibleLimit:5};
 const FOCUS_BATCH_SIZE=5;
 const resetFocusLimit=()=>{focusState.visibleLimit=FOCUS_BATCH_SIZE;};
 const focusGuides=Object.freeze({"morning":{"name":"朝の整理","short":"今日の重点候補を最大4件表示","body":"自分が動く仕事と確認日が到来した委任先の仕事から、優先度順に最大4件を表示します。今日中の完了を求めるものではありません。"},"self":{"name":"自分が動く","short":"自分が次に行動するカード","body":"「自分が次に動く」カードを一覧します。表示件数は今日中に終える仕事の量ではありません。"},"waiting":{"name":"確認待ち","short":"相手の回答・作業を待つカード","body":"「次に確認する」カードを一覧します。確認日がまだ来ていないものや日付未設定のものも含みます。"},"radar":{"name":"確認レーダー","short":"確認待ちを確認日と記録状況で整理","body":"確認待ちを確認日到来・今週これから・それ以降・日付なし・日付要確認などに分けます。次回確認日は仕事の締切ではありません。"},"quality":{"name":"点検候補","short":"情報不足や長期間未更新の点検候補","body":"次の一手・担当者・確認日の情報不足や長期間更新のないカードを表示します。停滞・遅延・未実施とは断定しません。"},"weekly":{"name":"週次見直し","short":"重点・確認・点検・構想の候補を最大9件","body":"重点・確認待ち・点検候補・来週の確認・構想を重複なく最大9件表示します。カードの更新日時は進捗の証明ではなく、前週との実績差分は未検証です。"},"undated":{"name":"日付なし","short":"次回確認日のない確認待ちカード","body":"「次に確認する」のうち次回確認日が未設定のカードを表示します。期限切れや催促の指示ではありません。"},"thinking":{"name":"考える","short":"検討・構想に分類されたカード","body":"「検討・構想」カードを一覧します。直ちに実行すべき仕事という意味ではありません。"},"unverified":{"name":"現況未確認","short":"状況の記録を確認したいカード","body":"現在地や状況に未確認の記載があるカードを表示します。作業が止まっていると判定したものではありません。"}});
@@ -548,7 +549,7 @@ function paintFocus(){
   const waiting=focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items;
   const undated=waiting.filter(x=>x.radarBucket==='undated');
   const explicit=undated.filter(x=>reviewCalendar.condition(x.card.desc).explicit).length;
-  if(undated.length)detail+=' 日付なし'+undated.length+'件のうち、確認条件の明記あり'+explicit+'件／記載なし・要確認'+(undated.length-explicit)+'件。日付や催促を自動設定しません。';
+  if(undated.length)detail+=' 日付なし'+undated.length+'件のうち、確認条件の明記あり'+explicit+'件／条件の明記なし'+(undated.length-explicit)+'件。記載がないことだけで要対応とは判定しません。日付や催促を自動設定しません。';
  }
  el('focus-description').textContent=detail;
  const dateGuide=dateGuides[focusState.date]||dateGuides.all;
@@ -619,12 +620,21 @@ function paintFocus(){
  for(const filter of ['due','week','none','all'])el('focus-date-'+filter).textContent=String(all.filter(({card})=>reviewCalendar.included(card.desc,filter,today)).length);
  document.querySelectorAll('[data-review-date]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.reviewDate===focusState.date)));
  const dateEntries=all.filter(({card})=>reviewCalendar.included(card.desc,focusState.date,today));
+ const conditionButton=el('focus-condition-only');
+ const conditionEligible=dateEntries.filter(({card,review})=>
+  !review.dataMissing&&reviewCalendar.condition(card.desc).explicit);
+ conditionButton.hidden=focusState.group!=='undated';
+ conditionButton.textContent='確認条件ありだけ（'+conditionEligible.length+'）';
+ conditionButton.setAttribute('aria-pressed',String(focusState.conditionOnly));
+ conditionButton.setAttribute('title','カードに明記された確認条件があるものだけを表示します。期限や催促は設定しません。');
  const incomplete=dateEntries.filter(({missingInfo})=>missingInfo).length;
  el('focus-missing').textContent='未記載・読取要確認（'+incomplete+'）';
  el('focus-missing').setAttribute('aria-pressed',String(focusState.missingOnly));
  el('focus-missing').setAttribute('title','現在地または次の一手が明記されていない、または記載形式を読み取れないカードを表示します。遅延の判定ではありません。');
  const entries=dateEntries.filter(({card,missingInfo})=>
-  filterCore.matches(card,{query:focusState.query})&&(!focusState.missingOnly||missingInfo));
+  filterCore.matches(card,{query:focusState.query})&&
+  (!focusState.missingOnly||missingInfo)&&
+  (!focusState.conditionOnly||focusState.group!=='undated'||reviewCalendar.condition(card.desc).explicit));
  const missingPriority=all.filter(({priority})=>priority===null).length;
  const displayed=Math.min(entries.length,focusState.visibleLimit);
  el('focus-count').textContent='表示：'+displayed+'/'+entries.length+'件／アクション該当：'+all.length+'件'+
@@ -705,14 +715,18 @@ function paintFocus(){
 }
 document.querySelectorAll('[data-focus]').forEach(b=>b.addEventListener('click',()=>{
  focusState.group=b.dataset.focus;focusState.date=focusState.group==='undated'?'none':'all';resetFocusLimit();
- focusState.missingOnly=false;paintFocus();
+ focusState.missingOnly=false;focusState.conditionOnly=false;paintFocus();
 }));
 el('weekly-undated-open').addEventListener('click',()=>{
- focusState.group='undated';focusState.date='none';focusState.missingOnly=false;resetFocusLimit();
+ focusState.group='undated';focusState.date='none';focusState.missingOnly=false;focusState.conditionOnly=false;resetFocusLimit();
  focusState.query='';el('focus-search').value='';paintFocus();
 });
 el('focus-missing').addEventListener('click',()=>{
  focusState.missingOnly=!focusState.missingOnly;resetFocusLimit();paintFocus();
+});
+el('focus-condition-only').addEventListener('click',()=>{
+ if(focusState.group!=='undated')return;
+ focusState.conditionOnly=!focusState.conditionOnly;resetFocusLimit();paintFocus();
 });
 document.querySelectorAll('[data-review-date]').forEach(b=>b.addEventListener('click',()=>{
  focusState.date=b.dataset.reviewDate;resetFocusLimit();paintFocus();
@@ -721,7 +735,7 @@ el('focus-search').addEventListener('input',e=>{
  focusState.query=e.target.value.trim();resetFocusLimit();paintFocus();
 });
 el('focus-clear').addEventListener('click',()=>{
- focusState.query='';focusState.missingOnly=false;resetFocusLimit();
+ focusState.query='';focusState.missingOnly=false;focusState.conditionOnly=false;resetFocusLimit();
  el('focus-search').value='';paintFocus();
 });
 el('focus-more').addEventListener('click',()=>{focusState.visibleLimit+=FOCUS_BATCH_SIZE;paintFocus();});
