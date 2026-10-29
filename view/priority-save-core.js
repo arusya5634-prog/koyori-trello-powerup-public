@@ -150,5 +150,63 @@
     return pending;
   }
 
-  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save,instruction,applyInstruction,autoConsume});
+
+  // A genuine card fact, NOT a queued command. This is read-only until
+  // a separate, approved native-card write is performed through Trello.
+  const NATIVE_LABELS=Object.freeze({
+    '最優先':'emergency','急ぎ':'urgent','早め':'soon','通常':'normal'
+  });
+  const NATIVE_NAMES=Object.freeze({
+    emergency:'最優先',urgent:'急ぎ',soon:'早め',normal:'通常'
+  });
+  const NATIVE_FIELD=/^(\s*[-*]?\s*現在の優先度\s*[:：]\s*)(.*?)\s*$/u;
+  function nativePriority(desc){
+    if(typeof desc!=='string')return {status:'invalid-description'};
+    const matches=desc.split(/\r?\n/u).map((s,i)=>({match:s.match(NATIVE_FIELD),line:i})).filter(x=>x.match);
+    if(matches.length===0)return {status:'absent'};
+    if(matches.length!==1)return {status:'duplicate'};
+    const text=matches[0].match[2].trim();
+    if(!Object.prototype.hasOwnProperty.call(NATIVE_LABELS,text))
+      return {status:'invalid-value'};
+    return {status:'present',value:NATIVE_LABELS[text],line:matches[0].line};
+  }
+  function resolvePriority(desc,saved,options){
+    const n=nativePriority(desc);
+    const opts=options||{};
+    if(n.status!=='absent'&&n.status!=='present')return {status:'invalid',reason:n.status};
+    if(n.status==='present'){
+      return {status:'ready',value:n.value,source:'description',
+        legacyMismatch:opts.sharedReadOK!==false&&PRIORITIES.includes(saved)&&saved!==n.value,
+        sharedUnverified:opts.sharedReadOK===false};
+    }
+    if(opts.sharedReadOK===false)return {status:'unverified'};
+    if(saved!==null&&saved!==undefined){
+      if(!PRIORITIES.includes(saved))return {status:'invalid',reason:'invalid-pluginData'};
+      return {status:'ready',value:saved,source:'pluginData'};
+    }
+    return {status:'ready',
+      value:PRIORITIES.includes(opts.legacy)?opts.legacy:'normal',
+      source:'legacy'};
+  }
+  // Pure planning helper for the legitimate canonical card field.
+  // Cannot itself bypass connector restrictions or mutate Trello.
+  function planNativeUpdate(desc,expected,requested){
+    if(typeof desc!=='string'||!PRIORITIES.includes(requested)||
+      (expected!==null&&!PRIORITIES.includes(expected)))return {status:'invalid'};
+    const n=nativePriority(desc);
+    if(n.status!=='present'&&n.status!=='absent')return {status:'invalid',reason:n.status};
+    const live=n.status==='present'?n.value:null;
+    if(live!==expected)return {status:'conflict',value:live};
+    if(live===requested)return {status:'unchanged',desc};
+    const lines=desc.split(/\r?\n/u);
+    const canonical='- 現在の優先度: '+NATIVE_NAMES[requested];
+    if(n.status==='absent'){
+      const divider=desc&& !desc.endsWith('\n')?'\n':'';
+      return {status:'planned',desc:desc+divider+'\n'+canonical+'\n',value:requested};
+    }
+    lines[n.line]=canonical;
+    return {status:'planned',desc:lines.join('\n'),value:requested};
+  }
+
+  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save,instruction,applyInstruction,autoConsume,nativePriority,resolvePriority,planNativeUpdate});
 })(window);
