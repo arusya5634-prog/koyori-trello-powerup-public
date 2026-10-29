@@ -61,37 +61,40 @@
       return 'normal';
     }
 
-    function priorityBadgesFor(cardName, saved) {
-      // One visual language: card badges display the priority icon. Legacy
-      // title prefixes remain a temporary read fallback until their values
-      // have been copied into Power-Up data and the names are safely cleaned.
-      const effective = Object.prototype.hasOwnProperty.call(PRIORITIES, saved)
-        ? saved : legacyPriority(cardName);
-      if (effective === 'normal') return [];
-      return [{text: PRIORITIES[effective].icon, color: PRIORITIES[effective].color}];
+    // Description-controlled cards use a human-readable canonical priority;
+    // unchanged cards still display the original Power-Up shared value.
+    function priorityResolve(name, desc, saved, readOK) {
+      const core=window.KoyoriPrioritySaveCore;
+      return core.resolvePriority(desc,saved,{
+        legacy:legacyPriority(name),sharedReadOK:readOK
+      });
     }
-
-    function prioritySummary(cardName, saved) {
-      const exists = Object.prototype.hasOwnProperty.call(PRIORITIES, saved);
-      const key = exists ? saved : legacyPriority(cardName);
-      const p = PRIORITIES[key];
-      const icon = p.icon ? p.icon + ' ' : '';
+    function priorityBadgesFor(cardName,saved,desc,readOK=true) {
+      const resolved=priorityResolve(cardName,desc,saved,readOK);
+      if(resolved.status!=='ready')return [{text:'⚠',color:'light-gray'}];
+      const effective=resolved.value;
+      if(effective==='normal')return [];
+      return [{text:PRIORITIES[effective].icon,color:PRIORITIES[effective].color}];
+    }
+    function prioritySummary(cardName,saved,desc,readOK=true) {
+      const result=priorityResolve(cardName,desc,saved,readOK);
+      if(result.status!=='ready')return null;
+      const p=PRIORITIES[result.value];
       return {
-        level: key,
-        source: exists ? '保存済み' : 'タイトルに準拠',
-        icon: icon,
-        label: p.label,
-        color: p.color
+        level:result.value,
+        source:result.source==='description'?'カード記録':result.source==='pluginData'?'保存済み':'タイトルに準拠',
+        icon:p.icon?p.icon+' ':'',label:p.label,color:p.color,
+        legacyMismatch:result.legacyMismatch
       };
     }
-
     function readPriorityState(t) {
-      // Fail closed; do not describe a failed read as 'normal'.
       return Promise.all([
-        t.card('name'),
-        t.get('card', 'shared', 'priority', null)
+        t.card('name','desc'),
+        t.get('card','shared','priority',null)
+          .then(value=>({ok:true,value}),()=>({ok:false,value:null}))
       ]).then(function(values) {
-        return prioritySummary(values[0] && values[0].name, values[1]);
+        return prioritySummary(values[0]&&values[0].name,
+          values[1].value,values[0]&&values[0].desc,values[1].ok);
       });
     }
 
@@ -131,24 +134,21 @@
       'card-badges': function(t) {
         return Promise.all([
           t.card('id', 'name', 'desc'),
-          t.get('card', 'shared', 'priority', null).catch(function() { return null; })
+          t.get('card', 'shared', 'priority', null)
+            .then(value=>({ok:true,value}),()=>({ok:false,value:null}))
         ])
           .then(async function(values) {
             const card=values[0];
-            let saved=values[1];
-            // Only an exact, explicitly staged directive can trigger a write.
-            // Failure or lack of board-write rights leaves the previous priority.
+            let saved=values[1].value,readOK=values[1].ok;
             const core=window.KoyoriPrioritySaveCore;
-            if(card&&core&&typeof core.autoConsume==='function'){
+            // A native authority is a genuine data field, never an executable
+            // pluginData instruction. Retain old queue only on legacy cards.
+            const native=card&&core?core.nativePriority(card.desc):{status:'invalid'};
+            if(native.status==='absent'&&card&&core&&typeof core.autoConsume==='function'){
               const result=await core.autoConsume(t,card);
-              // A fresh post-write SDK verification is included in the
-              // result when a request is saved. Reuse it without another
-              // round-trip. Later renders still read the current priority
-              // at the start and never replay the old request.
-              if(result.status==='saved')saved=result.value;
+              if(result.status==='saved'){saved=result.value;readOK=true;}
             }
-            // Scan-friendly card order: priority first, then ball owner.
-            return priorityBadgesFor(card&&card.name,saved)
+            return priorityBadgesFor(card&&card.name,saved,card&&card.desc,readOK)
               .concat(badgeFor(card&&card.desc));
           })
           .catch(function() { return []; });

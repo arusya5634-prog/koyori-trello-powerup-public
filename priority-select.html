@@ -47,7 +47,7 @@ const current=document.getElementById('current');
 const save=document.getElementById('save');
 const message=document.getElementById('message');
 const close=document.getElementById('close');
-let t=null,legacy='normal',selected=null,loaded=false,busy=false;
+let t=null,legacy='normal',selected=null,loaded=false,busy=false,nativeControlled=false;
 function priorFromName(name){
  if(/^🚨\s*/u.test(name||''))return 'emergency';
  if(/^🔴\s*/u.test(name||''))return 'urgent';
@@ -70,14 +70,27 @@ function render(){
 async function init(){
  try{
   t=TrelloPowerUp.iframe();
-  const [card,raw]=await Promise.all([
-   t.card('name'),t.get('card','shared','priority',null)
+  const [card,shared]=await Promise.all([
+   t.card('name','desc'),
+   t.get('card','shared','priority',null)
+    .then(value=>({ok:true,value}),()=>({ok:false,value:null}))
   ]);
-  if(raw!==null&&raw!==undefined&&!Object.prototype.hasOwnProperty.call(OPTIONS,raw)){
-    throw Error('unexpected stored priority');
+  const native=prioritySave.nativePriority(card&&card.desc);
+  if(native.status!=='absent'&&native.status!=='present')
+   throw Error('invalid native priority');
+  if(native.status==='present'){
+   nativeControlled=true;loaded=false;
+   current.textContent='現在：'+label(native.value)+'（カードの「現在の優先度」が正本）';
+   choice.replaceChildren(option(native.value,label(native.value)+'（カード本文で管理）'));
+   choice.disabled=true;save.disabled=true;
+   show('このカードは通常チャットで優先度を管理します。旧Power-Up保存値は変更できません。');
+   return;
   }
+  if(!shared.ok||shared.value!==null&&shared.value!==undefined&&
+    !Object.prototype.hasOwnProperty.call(OPTIONS,shared.value))
+   throw Error('unverified saved priority');
   legacy=priorFromName(card&&card.name);
-  selected=Object.prototype.hasOwnProperty.call(OPTIONS,raw)?raw:null;
+  selected=Object.prototype.hasOwnProperty.call(OPTIONS,shared.value)?shared.value:null;
   render();
   show('変更する場合だけ「保存する」を押してください。');
  }catch(e){
@@ -86,13 +99,19 @@ async function init(){
  }
 }
 async function update(){
- if(!t||!loaded||busy)return;
+ if(!t||!loaded||busy||nativeControlled)return;
  const raw=choice.value;
  if(raw!=='auto'&&!Object.prototype.hasOwnProperty.call(OPTIONS,raw))return;
  const proposed=raw==='auto'?null:raw;
  if(proposed===selected){show('変更なし。現在の設定を維持しています。');return;}
  busy=true;choice.disabled=true;save.disabled=true;show('保存中…');
  try{
+  const fresh=await t.card('desc');
+  if(prioritySave.nativePriority(fresh&&fresh.desc).status!=='absent'){
+   loaded=false;
+   show('別画面でカード本文の優先度管理が始まりました。再度開いて確認してください。',true);
+   return;
+  }
   const result=await prioritySave.save(t,'card',selected,proposed);
   if(Object.prototype.hasOwnProperty.call(result,'value'))selected=result.value;
   if(result.status==='saved'||result.status==='unchanged'){
