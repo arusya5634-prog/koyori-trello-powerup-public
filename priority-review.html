@@ -318,7 +318,9 @@ function legacyPriority(name){
  if(/^🟡\s*/u.test(name))return 'soon';
  return 'normal';
 }
-function effective(c){return Object.prototype.hasOwnProperty.call(LEVELS,c.saved)?c.saved:c.legacy;}
+function resolveCardPriority(c){return prioritySave.resolvePriority(c.desc,c.saved,{legacy:c.legacy,sharedReadOK:!c.readError&&!c.readPending});}
+function effective(c){const r=resolveCardPriority(c);return r.status==='ready'?r.value:null;}
+function isNative(c){return prioritySave.nativePriority(c.desc).status!=='absent';}
 function clean(name){return name.replace(/^(?:🚨|🔴|🟡)\s*/u,'');}
 const state={cards:[],priority:'all',search:'',list:'all',saving:new Set(),migrating:false,commandBusy:false};
 const reviewCore=window.KoyoriReviewCore;
@@ -349,7 +351,7 @@ function option(value,text){const n=document.createElement('option');n.value=val
 function showMessage(text,error=false){el('warn').textContent=text;el('warn').className=error?'error':'';}
 function paint(){
  const counts={urgent:0,soon:0,normal:0};
- for(const c of state.cards){const k=effective(c);counts[k==='emergency'?'urgent':k]++;}
+ for(const c of state.cards){const k=effective(c);if(k!==null)counts[k==='emergency'?'urgent':k]++;}
  Object.keys(counts).forEach(k=>el('count-'+k).textContent=String(counts[k]));
  el('count-all').textContent=String(state.cards.length);
  document.querySelectorAll('.stat').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.priority===state.priority)));
@@ -357,40 +359,58 @@ function paint(){
   const p=effective(c);
   return (state.priority==='all'||p===state.priority||(state.priority==='urgent'&&p==='emergency'))&&
    (state.list==='all'||state.list===c.idList)&&c.name.toLocaleLowerCase().includes(state.search);
- }).sort((a,b)=>ORDER[effective(a)]-ORDER[effective(b)]||a.order-b.order);
+ }).sort((a,b)=>(ORDER[effective(a)]??4)-(ORDER[effective(b)]??4)||a.order-b.order);
  const list=el('results');list.replaceChildren();
  if(!rows.length){const m=document.createElement('div');m.className='empty';m.textContent='該当するカードはありません';list.append(m);return;}
  for(const c of rows){
   const row=document.createElement('div');row.className='item';
   const badge=document.createElement('span');badge.className='marker';
-  badge.textContent=LEVELS[effective(c)].mark;
+  badge.textContent=effective(c)===null?'⚠':LEVELS[effective(c)].mark;
   const main=document.createElement('div');main.className='main';
   const link=document.createElement('a');link.textContent=clean(c.name);
   if(/^https:\/\/trello\.com\/c\/[A-Za-z0-9]+(?:\/|$)/.test(c.url||'')){link.href=c.url;link.target='_blank';link.rel='noopener noreferrer';}
   const sub=document.createElement('div');sub.className='meta';
-  const conflict=c.saved!==null&&c.saved!==c.legacy&&c.legacy!=='normal';
-  sub.textContent=c.listName+(conflict?' · ⚠ タイトルと不一致':'')+
-   (c.readPending?' · 優先度を照合中':c.readError?' · 読み取り失敗':'');
+  const resolved=resolveCardPriority(c);
+  const native=prioritySave.nativePriority(c.desc);
+  const conflict=native.status==='present'?resolved.legacyMismatch:
+    c.saved!==null&&c.saved!==c.legacy&&c.legacy!=='normal';
+  const suffix=native.status==='present'?' · カード本文が正本'+
+    (conflict?' · ⚠ 旧保存値との差異':''):
+    native.status!=='absent'?' · ⚠ 優先度欄を要修正':
+    conflict?' · ⚠ タイトルと不一致':'';
+  sub.textContent=c.listName+suffix+
+   (c.readPending&&native.status==='absent'?' · 優先度を照合中':
+    c.readError?' · 旧保存値の取得失敗':'');
   main.append(link,sub);
   const select=document.createElement('select');select.className='editor';
   select.setAttribute('aria-label',clean(c.name)+' の優先度を変更');
-  select.append(option('auto','タイトルに準拠 ('+LEVELS[c.legacy].name+')'));
-  for(const key of Object.keys(LEVELS))select.append(option(key,LEVELS[key].mark+' '+LEVELS[key].name));
-  select.value=Object.prototype.hasOwnProperty.call(LEVELS,c.saved)?c.saved:'auto';
-  select.disabled=state.migrating||state.commandBusy||c.readPending||c.readError||state.saving.has(c.id);
+  if(native.status==='present'){
+   select.append(option('native',LEVELS[native.value].name+'（カード本文で管理）'));
+   select.value='native';
+  }else{
+   select.append(option('auto','タイトルに準拠 ('+LEVELS[c.legacy].name+')'));
+   for(const key of Object.keys(LEVELS))select.append(option(key,LEVELS[key].mark+' '+LEVELS[key].name));
+   select.value=Object.prototype.hasOwnProperty.call(LEVELS,c.saved)?c.saved:'auto';
+  }
+  select.disabled=isNative(c)||state.migrating||state.commandBusy||c.readPending||c.readError||state.saving.has(c.id);
+  if(isNative(c))select.title='カード本文で管理中。旧Power-Up保存値は変更できません';
   select.addEventListener('change',()=>savePriority(c,select));
   row.append(badge,main,select);
   list.append(row);
  }
 }
 async function savePriority(c,select){
- if(!t||state.migrating||state.commandBusy||c.readPending||c.readError||state.saving.has(c.id))return;
+ if(!t||isNative(c)||state.migrating||state.commandBusy||c.readPending||c.readError||state.saving.has(c.id))return;
  const chosen=select.value;
  const next=chosen==='auto'?null:chosen;
  if(next===c.saved)return;
  state.saving.add(c.id);select.disabled=true;
  showMessage('保存して再取得中…');
  try{
+  const fresh=await t.cards('id','desc');
+  const latest=Array.isArray(fresh)?fresh.find(x=>x.id===c.id):null;
+  if(!latest||latest.desc!==c.desc||prioritySave.nativePriority(latest.desc).status!=='absent')
+   throw Error('card-changed');
   const result=await prioritySave.save(t,c.id,c.saved,next);
   if(Object.prototype.hasOwnProperty.call(result,'value'))c.saved=result.value;
   if(result.status==='saved')showMessage('保存後の再取得まで確認しました。カード表面はボードの再読込で更新されます。');
@@ -403,7 +423,9 @@ async function savePriority(c,select){
   }
  }catch(e){
   c.readError=true;
-  showMessage('保存状態が不明です。再試行せず、画面を閉じて開き直し現在値を確認してください。',true);
+  showMessage(e&&e.message==='card-changed'?
+    'カードの説明が変わったため保存を中止しました。画面を開き直してください。':
+    '保存状態が不明です。再試行せず、画面を閉じて開き直し現在値を確認してください。',true);
  }
  state.saving.delete(c.id);paint();paintOverview();paintFocus();paintMigration();
 }
@@ -412,8 +434,10 @@ el('search').addEventListener('input',e=>{state.search=e.target.value.toLocaleLo
 el('list').addEventListener('change',e=>{state.list=e.target.value;paint();});
 
 function pendingPriorityRequests(){
- return state.cards.map(card=>({card,parsed:prioritySave.instruction(card.desc,card.id)}))
-  .filter(item=>item.parsed.status!=='none');
+ return state.cards.map(card=>({
+   card,parsed:isNative(card)&&prioritySave.instruction(card.desc,card.id).status==='ready'?
+    {status:'native-controlled'}:prioritySave.instruction(card.desc,card.id)
+  })).filter(item=>item.parsed.status!=='none');
 }
 function paintPriorityRequests(){
  const queue=pendingPriorityRequests();
@@ -429,7 +453,9 @@ function paintPriorityRequests(){
    const expected=request.expected===null?'未設定':LEVELS[request.expected].name;
    line.textContent=card.name+'｜'+expected+' → '+LEVELS[request.requested].name+
     (card.readError?'（優先度の取得失敗）':card.readPending?'（取得中）':'');
-  }else line.textContent=card.name+'｜指示形式・カードIDに問題があります（適用対象外）';
+  }else line.textContent=card.name+(parsed.status==='native-controlled'?
+   '｜カード本文が正本のため旧反映指示を無効化':
+   '｜指示形式・カードIDに問題があります（適用対象外）');
   list.append(line);
  }
  run.disabled=state.commandBusy||state.migrating||state.saving.size>0||state.cards.some(c=>c.readPending)||
@@ -500,7 +526,7 @@ async function applyPendingPriorityRequests(){
 el('priority-command-run').addEventListener('click',applyPendingPriorityRequests);
 function paintMigration(){
  if(!reviewState.loaded||reviewState.loadError)return;
- const withPrefix=state.cards.filter(c=>c.legacy!=='normal');
+ const withPrefix=state.cards.filter(c=>c.legacy!=='normal'&&!isNative(c));
  el('migration-box').hidden=!withPrefix.length;
  if(!withPrefix.length)return;
  const copied=withPrefix.filter(c=>c.saved!==null&&!c.readPending&&!c.readError).length;
@@ -515,7 +541,7 @@ el('migration-run').addEventListener('click',async()=>{
  const status=el('migration-report');status.className='meta';
  status.textContent='旧記号の優先度を一件ずつ照合中。タイトルは変更していません…';
  try{
-  const report=await priorityMigration.migrate(t,state.cards,prioritySave,progress=>{
+  const report=await priorityMigration.migrate(t,state.cards.filter(c=>!isNative(c)),prioritySave,progress=>{
    status.textContent='照合済み：'+(progress.created+progress.existing+progress.conflicts+progress.failed)+'/'+progress.total+'件';
   });
   if(report.canRename){
