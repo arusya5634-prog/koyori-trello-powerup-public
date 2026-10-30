@@ -175,6 +175,8 @@ input,select{font-size:15px;padding:10px}
 .focus-choice-grid-four{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:700px){.focus-choice-grid,.focus-choice-grid-four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-color-scheme:dark){.focus-choice-group+.focus-choice-group{border-top-color:#454f59}}
+.priority-snapshot-output{width:100%;box-sizing:border-box;min-height:180px;margin-top:9px;padding:10px;font:12px/1.5 ui-monospace,monospace;resize:vertical;white-space:pre;overflow:auto}
+.priority-snapshot-output[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -269,6 +271,14 @@ input,select{font-size:15px;padding:10px}
 <button type="button" id="priority-command-run" disabled>確認済みの依頼をまとめて反映</button>
 <div id="priority-command-report" role="status" aria-live="polite" class="meta">Power-Up共有データへ保存し、再読込で確認します。カード説明文だけでは完了になりません。</div>
 </div>
+<div class="migration-box" id="priority-snapshot-box">
+<strong>優先度の新方式移行｜読取データの取得</strong>
+<div class="meta">旧Power-Upの保存値とカード本文の現在値を照合し、カードIDと優先度だけを表示します。カード名・説明・担当者は含めず、外部送信もカード更新も行いません。取得失敗や競合はそのまま記録し、未設定は通常にしません。</div>
+<button type="button" id="priority-snapshot-run">全件の保存値を読み直して表示（読取のみ）</button>
+<div class="meta" id="priority-snapshot-report" role="status" aria-live="polite">取得後、下のテキストをコピーしてこよりとのチャットへ貼り付けてください。</div>
+<textarea id="priority-snapshot-data" class="priority-snapshot-output" aria-label="優先度移行用のIDと値だけのデータ" readonly hidden></textarea>
+<button type="button" id="priority-snapshot-copy" hidden>データをコピー</button>
+</div>
 <div class="stats" role="group" aria-label="優先度絞り込み">
 <button class="stat" data-priority="urgent" aria-pressed="false"><strong id="count-urgent">—</strong><span>🚨🔴 急ぎ</span></button>
 <button class="stat" data-priority="soon" aria-pressed="false"><strong id="count-soon">—</strong><span>🟡 早め</span></button>
@@ -301,7 +311,7 @@ input,select{font-size:15px;padding:10px}
 <script src="./view/review-core.js?v=20261025-confirmation-variants"></script>
 <script src="./view/daily-focus-core.js?v=20261028-decision-preview"></script>
 <script src="./view/next-review-core.js?v=20261025-invalid-date-v3"></script>
-<script src="./view/priority-save-core.js?v=20261025-card-view-v2"></script>
+<script src="./view/priority-save-core.js?v=20261030-readonly-export-v1"></script>
 <script src="./view/priority-migration-core.js?v=20261025-card-view-v2"></script>
 <script>
 'use strict';
@@ -349,6 +359,64 @@ const el=id=>document.getElementById(id);
 let t=null;
 function option(value,text){const n=document.createElement('option');n.value=value;n.textContent=text;return n;}
 function showMessage(text,error=false){el('warn').textContent=text;el('warn').className=error?'error':'';}
+
+async function showPrioritySnapshot(){
+ const button=el('priority-snapshot-run'),area=el('priority-snapshot-data');
+ const copy=el('priority-snapshot-copy'),report=el('priority-snapshot-report');
+ area.hidden=true;copy.hidden=true;area.value='';
+ if(!t||state.cards.length===0||state.cards.some(c=>c.readPending)){
+  report.textContent='優先度の初回読込が終わっていません。読込完了後に操作してください。';return;
+ }
+ if(state.cards.some(c=>c.readError)){
+  report.textContent='旧優先度の読取失敗があるため出力を停止しました。再読み込みして確認してください。';return;
+ }
+ button.disabled=true;report.textContent='カードと旧保存値を再取得して照合しています…';
+ const sameCard=(a,b)=>a&&b&&a.id===b.id&&a.name===b.name&&a.idList===b.idList&&a.desc===b.desc;
+ try{
+  const fresh=await t.cards('id','name','idList','desc');
+  if(!Array.isArray(fresh)||fresh.length!==state.cards.length)throw Error('card-count');
+  const map=new Map(fresh.map(c=>[c.id,c]));
+  if(map.size!==state.cards.length||state.cards.some(c=>!sameCard(c,map.get(c.id))))
+   throw Error('card-changed');
+  const items=state.cards.map(c=>({...c,saved:null,readError:false,readPending:false}));
+  const queue=items.slice();
+  await Promise.all(Array.from({length:Math.min(5,queue.length)},async()=>{
+   while(queue.length){
+    const c=queue.shift();
+    try{
+     const saved=await t.get(c.id,'shared','priority',null);
+     if(!prioritySave.valid(saved))throw Error('invalid-shared');
+     c.saved=saved===undefined?null:saved;
+    }catch(_){c.readError=true;}
+   }
+  }));
+  if(items.some(c=>c.readError))throw Error('priority-read');
+  const after=await t.cards('id','name','idList','desc');
+  if(!Array.isArray(after)||after.length!==fresh.length||
+    after.some(c=>!sameCard(c,map.get(c.id))))throw Error('concurrent-edit');
+  const result=prioritySave.exportSnapshot(items);
+  if(result.status!=='ready')throw Error(result.status);
+  area.value=result.text;area.hidden=false;copy.hidden=false;
+  report.textContent='取得完了：'+result.payload.count+'件（本文正本'+result.counts.description+
+   '／旧共有値'+result.counts.shared+'／タイトル参考'+result.counts.titleFallback+
+   '／未設定'+result.counts.unset+'／旧値不一致'+result.counts.conflict+
+   '）。コピーしてチャットへ貼り付けてください。';
+  area.focus();area.select();
+ }catch(_){
+  report.textContent='読み取りまたは照合に失敗したため、移行データは出力していません。カード・優先度は変更していません。';
+ }finally{button.disabled=false;}
+}
+el('priority-snapshot-run').addEventListener('click',showPrioritySnapshot);
+el('priority-snapshot-copy').addEventListener('click',async()=>{
+ const area=el('priority-snapshot-data'),report=el('priority-snapshot-report');
+ if(area.hidden||!area.value)return;
+ area.focus();area.select();
+ try{
+  if(!navigator.clipboard||!navigator.clipboard.writeText)throw Error('clipboard-unavailable');
+  await navigator.clipboard.writeText(area.value);
+  report.textContent='コピーしました。チャットへ貼り付けてください。';
+ }catch(_){report.textContent='クリップボードへの自動コピーが使えません。選択済みのデータをCtrl+Cでコピーしてください。';}
+});
 function paint(){
  const counts={urgent:0,soon:0,normal:0};
  for(const c of state.cards){const k=effective(c);if(k!==null)counts[k==='emergency'?'urgent':k]++;}
