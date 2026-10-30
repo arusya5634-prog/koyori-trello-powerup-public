@@ -208,5 +208,41 @@
     return {status:'planned',desc:lines.join('\n'),value:requested};
   }
 
-  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save,instruction,applyInstruction,autoConsume,nativePriority,resolvePriority,planNativeUpdate});
+
+  // Read-only handoff for a one-time, consented migration to description priority.
+  // Do not export card titles, descriptions, assignees or labels. Never synthesize
+  // "normal" for an unset old shared value or mask a failed priority read.
+  function exportSnapshot(cards){
+    if(!Array.isArray(cards)||!cards.length)return {status:'empty'};
+    const seen=new Set(),rows=[],counts={description:0,shared:0,titleFallback:0,unset:0,conflict:0};
+    const idPattern=/^[0-9a-f]{24}$/iu;
+    for(const c of cards){
+      if(!c||!idPattern.test(String(c.id||''))||
+        !idPattern.test(String(c.idList||''))||seen.has(c.id))return {status:'invalid-card'};
+      seen.add(c.id);
+      if(c.readPending||c.readError)return {status:'read-incomplete'};
+      if(c.descMissing||typeof c.desc!=='string')return {status:'missing-description'};
+      const native=nativePriority(c.desc);
+      if(!['present','absent'].includes(native.status))return {status:'invalid-native'};
+      const old=c.saved===undefined?null:c.saved;
+      if(!valid(old))return {status:'invalid-shared'};
+      const title=typeof c.name==='string'&&/^\s*(?:🚨|🔴|🟡)\s*/u.test(c.name);
+      const fallback=title&&PRIORITIES.includes(c.legacy)?c.legacy:null;
+      const source=native.status==='present'?'description':
+        old!==null?'shared':fallback?'title-fallback':'unset';
+      const priority=native.status==='present'?native.value:old!==null?old:fallback;
+      const conflict=native.status==='present'&&old!==null&&old!==native.value;
+      const row={cardId:c.id,listId:c.idList,priority,source,legacySaved:old};
+      if(conflict){row.legacyMismatch=true;counts.conflict++;}
+      rows.push(row);
+      if(source==='description')counts.description++;
+      else if(source==='shared')counts.shared++;
+      else if(source==='title-fallback')counts.titleFallback++;
+      else counts.unset++;
+    }
+    const payload={format:'koyori-priority-snapshot-v1',count:rows.length,cards:rows};
+    return {status:'ready',payload,text:JSON.stringify(payload,null,2),counts};
+  }
+
+  root.KoyoriPrioritySaveCore=Object.freeze({PRIORITIES,valid,save,instruction,applyInstruction,autoConsume,nativePriority,resolvePriority,planNativeUpdate,exportSnapshot});
 })(window);
