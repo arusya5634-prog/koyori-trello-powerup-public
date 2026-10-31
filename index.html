@@ -60,10 +60,6 @@
       } catch (_) { return null; }
       return '#'+card.idShort;
     }
-    function cardNumberBadges(card,t) {
-      const number=cardNumberValue(card,t);
-      return number?[{text:number,color:'light-gray'}]:[];
-    }
     function cardNumberDetailBadges(card,t) {
       const number=cardNumberValue(card,t);
       return number?[{title:'カード番号',text:number,color:'light-gray'}]:[];
@@ -161,9 +157,9 @@
     window.TrelloPowerUp.initialize({
       'card-badges': function(t) {
         return Promise.all([
-          // Number lookup is optional: preserve existing badges on SDK read error.
-          t.card('id', 'idShort', 'name', 'desc')
-            .catch(function() { return t.card('id','name','desc'); }),
+          // The front intentionally excludes the card number; read only what
+          // priority, owner and timing require.
+          t.card('id', 'name', 'desc'),
           t.get('card', 'shared', 'priority', null)
             .then(value=>({ok:true,value}),()=>({ok:false,value:null}))
         ])
@@ -179,7 +175,7 @@
               if(result.status==='saved'){saved=result.value;readOK=true;}
             }
             return priorityBadgesFor(card&&card.name,saved,card&&card.desc,readOK)
-              .concat(badgeFor(card&&card.desc),timingBadgesFor(card&&card.desc),cardNumberBadges(card,t));
+              .concat(badgeFor(card&&card.desc),timingBadgesFor(card&&card.desc));
           })
           .catch(function() { return []; });
       },
