@@ -3,6 +3,8 @@
  'use strict';
  const ACTIONS=Object.freeze(['自分が次に動く','次に確認する','検討・構想']);
  const META=Object.freeze(['日次・定常','保留']);
+ // Native urgency labels never belong to project classification edits.
+ const PRIORITIES=Object.freeze(['最優先','急ぎ','早め','通常']);
  const ID=/^[a-f0-9]{24}$/i;
  function labelsValid(items){
   if(!Array.isArray(items))throw Error('Missing labels');
@@ -14,7 +16,7 @@
  }
  function projectCatalog(boardLabels){
   labelsValid(boardLabels);
-  return boardLabels.filter(l=>l.name.trim()&&!ACTIONS.includes(l.name)&&!META.includes(l.name));
+  return boardLabels.filter(l=>l.name.trim()&&!ACTIONS.includes(l.name)&&!META.includes(l.name)&&!PRIORITIES.includes(l.name));
  }
  function inspect(cardLabels,boardLabels){
   labelsValid(cardLabels);labelsValid(boardLabels);

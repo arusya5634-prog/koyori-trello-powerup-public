@@ -63,10 +63,15 @@
       const parity=c.inspectPriorityLabels(card.desc,card.labels);
       if(parity.status!=='ready')return null;
       const kind=timing.actionKind(card.desc,card.labels);
-      if(kind.invalid||(!kind.kind&&!kind.recurring))return null;
+      if(kind.invalid)return null;
       // An invalid explicit schedule must not be silently replaced with ?/?.
       if(timing.inspect(card.desc).invalid||timing.nextSchedule(card.desc).invalid)
         return null;
+      // Thinking, on-hold and other cards have no Act/確認/定常 kind.
+      // Keep their canonical timing badge, but never duplicate a validated
+      // native priority label with the old priority icon.
+      if(!kind.kind&&!kind.recurring)
+        return badgeFor(card.desc).concat(timingBadgesFor(card.desc));
       return badgeFor(card.desc).concat(timing.actionBadge(card.desc,card.labels,new Date()));
     }
 

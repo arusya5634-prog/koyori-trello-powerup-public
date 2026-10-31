@@ -4,6 +4,7 @@
   // An "unverified" status means missing evidence, never that work is overdue.
   const ACTIONS=Object.freeze(['自分が次に動く','次に確認する','検討・構想']);
   const META=Object.freeze(['日次・定常','保留']);
+  const PRIORITIES=Object.freeze(['最優先','急ぎ','早め','通常']);
   // Later human checks supersede older provisional notes but not task completion.
   function confirmedAfterOldNote(description){
     const text=String(description||'');
@@ -24,7 +25,7 @@
     const labels=Array.isArray(card.labels)?card.labels:[];
     const dataMissing=card.descMissing===true||card.labelsMissing===true;
     const action=labels.filter(x=>ACTIONS.includes(x));
-    const project=labels.filter(x=>!ACTIONS.includes(x)&&!META.includes(x));
+    const project=labels.filter(x=>!ACTIONS.includes(x)&&!META.includes(x)&&!PRIORITIES.includes(x));
     const paused=labels.includes('保留')||/^90(?:$|[｜\s])/u.test(card.listName||'');
     const routine=labels.includes('日次・定常');
     const missingAction=!action.length&&!paused&&!routine&&!card.labelsMissing;
