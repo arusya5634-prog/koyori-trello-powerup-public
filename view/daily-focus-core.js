@@ -68,6 +68,9 @@
   for(const card of cards){
    const review=reviewCore.derive(card);
    if(review.paused)continue;
+   // A contradictory or unreadable classification is a review problem, not
+   // an actionable Focus item. Never guess from one of two legacy labels.
+   if(review.dataMissing||review.manyActions)continue;
    if(group==='unverified'?!review.unverified:!review.action.includes(GROUPS[group]))continue;
    const step=stepInfo(card.desc);
    result.push({card,review,step:step.value,stepProposal:step.proposal,

@@ -21,16 +21,56 @@
   function hasBall(description){
     return /^\s*(?:[-*]\s+)?(?:\*\*)?ボール(?:\*\*)?\s*[:：]\s*(?!未設定\s*$)(?!-\s*$)\S+/m.test(String(description||''));
   }
+  // Canonical description metadata first; legacy labels remain a consistency
+  // check during coexistence. Ambiguities are never treated as valid work.
+  function metadata(description,key){
+    const values=[];
+    for(const line of description.split(/\r?\n/u)){
+      const m=line.match(/^\s*(?:[-*]\s*)?(?:\*\*)?(行動区分|継続区分)(?:\*\*)?\s*[:：]\s*(.*?)\s*$/u);
+      if(m&&m[1]===key)values.push(m[2].trim());
+    }
+    return values.length>1||(values.length===1&&!values[0])?
+      {invalid:true,value:null}:{invalid:false,value:values.length?values[0]:null};
+  }
+  function actionSource(card,labels){
+    if(typeof card.desc!=='string'||card.descMissing===true||
+       card.labelsMissing===true||card.labelsHasMore===true)return {invalid:true};
+    if(new Set(labels).size!==labels.length||labels.some(x=>typeof x!=='string'||!x.trim()))
+      return {invalid:true};
+    const a=metadata(card.desc,'行動区分'),r=metadata(card.desc,'継続区分');
+    if(a.invalid||r.invalid||
+       (a.value!==null&&!['Act','確認'].includes(a.value))||
+       (r.value!==null&&!['定常','非定常'].includes(r.value)))return {invalid:true};
+    const old=labels.filter(x=>ACTIONS.includes(x));
+    if(old.length>1)return {invalid:true,reason:'legacy-action-conflict'};
+    const legacy=old[0]||null;
+    if(a.value!==null&&legacy&&
+       ((a.value==='Act'&&legacy!=='自分が次に動く')||
+        (a.value==='確認'&&legacy!=='次に確認する')))return {invalid:true};
+    if(r.value==='非定常'&&labels.includes('日次・定常'))return {invalid:true};
+    const action=a.value?[a.value==='Act'?'自分が次に動く':'次に確認する']:
+      legacy?[legacy]:[];
+    const routine=r.value==='定常'||(r.value===null&&labels.includes('日次・定常'));
+    return {invalid:false,action,routine};
+  }
   function derive(card){
     const labels=Array.isArray(card.labels)?card.labels:[];
-    const dataMissing=card.descMissing===true||card.labelsMissing===true;
-    const action=labels.filter(x=>ACTIONS.includes(x));
+    const unreadable=!Array.isArray(card.labels)||typeof card.desc!=='string'||
+      card.descMissing===true||card.labelsMissing===true||card.labelsHasMore===true;
+    const resolved=actionSource(card,labels);
+    const invalid=unreadable||resolved.invalid;
+    // Preserve *observed* legacy labels solely for review diagnostics, even
+    // when an unrelated source field is unreadable. They are NOT approved
+    // execution candidates: Focus explicitly excludes invalid/multiple actions.
+    const observedActions=labels.filter(x=>ACTIONS.includes(x));
+    const action=invalid?observedActions:resolved.action;
     const project=labels.filter(x=>!ACTIONS.includes(x)&&!META.includes(x)&&!PRIORITIES.includes(x));
     const paused=labels.includes('保留')||/^90(?:$|[｜\s])/u.test(card.listName||'');
-    const routine=labels.includes('日次・定常');
-    const missingAction=!action.length&&!paused&&!routine&&!card.labelsMissing;
-    const manyActions=action.length>1;
-    const missingProject=!project.length&&!paused&&!card.labelsMissing;
+    const routine=!invalid&&resolved.routine;
+    const dataMissing=unreadable||(resolved.invalid&&resolved.reason!=='legacy-action-conflict');
+    const missingAction=!invalid&&!action.length&&!paused&&!routine;
+    const manyActions=observedActions.length>1; // Distinct from invalid metadata/dataMissing
+    const missingProject=!invalid&&!project.length&&!paused;
     const unverified=hasUnverifiedStatus(card.desc);
     const confirmedLater=confirmedAfterOldNote(card.desc);
     return {action,project,paused,routine,missingAction,manyActions,missingProject,unverified,confirmedLater,dataMissing,
