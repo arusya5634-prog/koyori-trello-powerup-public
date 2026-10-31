@@ -56,6 +56,7 @@ p,.muted,.meta,footer,.empty{color:#9fadbc}.warn{color:#f3cd63}
 'use strict';
 const ACTIONS=['自分が次に動く','次に確認する','検討・構想'];
 const META=['日次・定常','保留'];
+const PRIORITIES=['最優先','急ぎ','早め','通常'];
 const state={tab:'action',query:'',kind:'all',list:'all',cards:[],lists:[],ready:false};
 const el=id=>document.getElementById(id);
 const isAction=x=>ACTIONS.includes(x);
@@ -63,7 +64,7 @@ const isMeta=x=>META.includes(x);
 function model(card,listNames,index){
  const labels=(Array.isArray(card.labels)?card.labels:[]).map(x=>typeof x==='string'?x:x&&x.name).filter(x=>typeof x==='string'&&x.trim());
  const action=labels.filter(isAction);
- const project=labels.filter(x=>!isAction(x)&&!isMeta(x));
+ const project=labels.filter(x=>!isAction(x)&&!isMeta(x)&&!PRIORITIES.includes(x));
  const routine=labels.includes('日次・定常');
  const paused=labels.includes('保留')||/^90(?:\b|[｜\s])/u.test(listNames.get(card.idList)||'');
  return {
