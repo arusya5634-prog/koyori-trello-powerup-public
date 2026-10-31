@@ -11,6 +11,7 @@
   <p>このページにカードの情報は表示・保存されません。</p>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
   <script src="./view/task-projection-core.js?v=20261025-owner-sync"></script>
+  <script src="./view/next-review-core.js?v=20261031-front-timing-v1"></script>
   <script src="./view/top-summary-core.js?v=20261025-semantic-compact-v3"></script>
   <script src="./view/checklist-due-core.js?v=20261026-empty-state-v2"></script>
   <script src="./view/priority-save-core.js?v=20261027-auto-request-v1"></script>
@@ -40,6 +41,14 @@
       return [{ text: '👤 ' + shortBall, color: 'light-gray' }];
     }
 
+
+    // The card front shows exactly one explicit, source-backed next time.
+    // Review dates and meeting dates stay distinct from Trello official due dates.
+    function timingBadgesFor(description) {
+      const core=window.KoyoriNextReviewCore;
+      if (!core||typeof core.frontBadge!=='function') return [];
+      return core.frontBadge(description,new Date());
+    }
 
     // Priority editor v0.3. No extra app authorization or backend requests.
     // Shared Power-Up data is Trello-managed and visible to board members.
@@ -149,7 +158,7 @@
               if(result.status==='saved'){saved=result.value;readOK=true;}
             }
             return priorityBadgesFor(card&&card.name,saved,card&&card.desc,readOK)
-              .concat(badgeFor(card&&card.desc));
+              .concat(badgeFor(card&&card.desc),timingBadgesFor(card&&card.desc));
           })
           .catch(function() { return []; });
       },
