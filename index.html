@@ -50,6 +50,25 @@
       return core.frontBadge(description,new Date());
     }
 
+    // The board-local Trello idShort is read-only, not a second identifier store.
+    // A card-context mismatch must never show another card's number.
+    function cardNumberValue(card,t) {
+      if (!card||!Number.isSafeInteger(card.idShort)||card.idShort<1) return null;
+      try {
+        const context=t&&typeof t.getContext==='function'?t.getContext():null;
+        if (context&&context.card&&card.id!==context.card) return null;
+      } catch (_) { return null; }
+      return '#'+card.idShort;
+    }
+    function cardNumberBadges(card,t) {
+      const number=cardNumberValue(card,t);
+      return number?[{text:number,color:'light-gray'}]:[];
+    }
+    function cardNumberDetailBadges(card,t) {
+      const number=cardNumberValue(card,t);
+      return number?[{title:'カード番号',text:number,color:'light-gray'}]:[];
+    }
+
     // Priority editor v0.3. No extra app authorization or backend requests.
     // Shared Power-Up data is Trello-managed and visible to board members.
     const PRIORITIES = {
@@ -142,7 +161,9 @@
     window.TrelloPowerUp.initialize({
       'card-badges': function(t) {
         return Promise.all([
-          t.card('id', 'name', 'desc'),
+          // Number lookup is optional: preserve existing badges on SDK read error.
+          t.card('id', 'idShort', 'name', 'desc')
+            .catch(function() { return t.card('id','name','desc'); }),
           t.get('card', 'shared', 'priority', null)
             .then(value=>({ok:true,value}),()=>({ok:false,value:null}))
         ])
@@ -158,7 +179,7 @@
               if(result.status==='saved'){saved=result.value;readOK=true;}
             }
             return priorityBadgesFor(card&&card.name,saved,card&&card.desc,readOK)
-              .concat(badgeFor(card&&card.desc),timingBadgesFor(card&&card.desc));
+              .concat(badgeFor(card&&card.desc),timingBadgesFor(card&&card.desc),cardNumberBadges(card,t));
           })
           .catch(function() { return []; });
       },
@@ -199,7 +220,8 @@
         // Independent read failures should never erase the priority badge.
         return Promise.all([
           readPriorityState(t).catch(function() { return null; }),
-          t.card('desc').catch(function() { return null; }),
+          t.card('id','idShort','desc')
+            .catch(function() { return t.card('desc').catch(function() { return null; }); }),
           t.card('checklists').catch(function() { return null; })
         ]).then(function(values) {
           const current=values[0],card=values[1];
@@ -211,7 +233,7 @@
             callback:prioritySelectPopup
           };
           const haveDesc=card && typeof card.desc==='string';
-          // Requested order: priority -> ball -> review date -> status -> next step.
+          // Requested order: priority -> ball -> review date -> status -> next step -> number.
           // Trello controls responsive row wrapping; this API cannot force hard rows.
           // Reuse the same description parser already used by the card-front ball badge.
           const ball=haveDesc&&window.KoyoriTopSummaryCore?
@@ -231,7 +253,7 @@
             color:due.status==='past'?'red':'light-gray',
             callback:checklistDuePopup
           }]:[];
-          return [priority].concat(ball,badges,dueBadge);
+          return [priority].concat(ball,badges,dueBadge,cardNumberDetailBadges(card,t));
         });
       },
       'board-buttons': function(t) {
