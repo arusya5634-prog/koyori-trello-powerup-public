@@ -96,5 +96,63 @@
    color:past?'orange':next.date===today?'yellow':'light-gray'}];
  }
 
- root.KoyoriNextReviewCore=Object.freeze({valid,inspect,condition,todayLocal,weekEnd,bucket,included,nextSchedule,frontBadge});
+ // PREVIEW: a classification is independent of whether a task is recurring.
+ // Prefer explicit migrated metadata; while migration is underway, legacy
+ // labels can be read without deleting or modifying any Trello card.
+ function actionKind(desc,labels){
+  if(typeof desc!=='string'||!Array.isArray(labels))return {kind:null,recurring:false,invalid:true};
+  const names=[];
+  for(const label of labels){
+   if(!label||typeof label.name!=='string')return {kind:null,recurring:false,invalid:true};
+   names.push(label.name);
+  }
+  const legacy=names.filter(name=>name==='自分が次に動く'||name==='次に確認する');
+  const lines=desc.split(/\r?\n/u);
+  const explicit=[],ongoing=[];
+  for(const line of lines){
+   let m=line.match(/^\s*(?:[-*]\s*)?行動区分\s*[:：]\s*(.*?)\s*$/u);
+   if(m){explicit.push(m[1].trim());continue;}
+   m=line.match(/^\s*(?:[-*]\s*)?継続区分\s*[:：]\s*(.*?)\s*$/u);
+   if(m)ongoing.push(m[1].trim());
+  }
+  if(legacy.length>1||explicit.length>1||ongoing.length>1)
+   return {kind:null,recurring:false,invalid:true};
+  const kindMap={'自分が次に動く':'Act','次に確認する':'確認',Act:'Act','確認':'確認'};
+  const e=explicit.length?kindMap[explicit[0]]:null;
+  const l=legacy.length?kindMap[legacy[0]]:null;
+  if((explicit.length&&!e)||(e&&l&&e!==l))
+   return {kind:null,recurring:false,invalid:true};
+  if(ongoing.length&&!['定常','非定常'].includes(ongoing[0]))
+   return {kind:null,recurring:false,invalid:true};
+  if(ongoing[0]==='非定常'&&names.includes('日次・定常'))
+   return {kind:null,recurring:false,invalid:true};
+  return {kind:e||l||null,recurring:ongoing[0]==='定常'||names.includes('日次・定常'),invalid:false};
+ }
+ // Read-only combined badge for the proposed label-priority rollout.
+ // Never infer times from free text, or treat a follow-up as Trello due.
+ function actionBadge(desc,labels,now=new Date()){
+  if(!now||typeof now.getTime!=='function'||!Number.isFinite(now.getTime())||
+    typeof now.getFullYear!=='function'||typeof now.getMonth!=='function'||
+    typeof now.getDate!=='function')return [];
+  const mode=actionKind(desc,labels);
+  if(mode.invalid)return [];
+  const review=inspect(desc),event=nextSchedule(desc);
+  if(review.invalid||event.invalid)return [];
+  const choices=[];
+  if(review.date)choices.push({date:review.date,rank:1});
+  if(event.date)choices.push({date:event.date,rank:0});
+  choices.sort((a,b)=>a.date.localeCompare(b.date)||a.rank-b.rank);
+  const next=choices[0]||null;
+  if(!mode.kind&&!mode.recurring)return [];
+  if(!next&&mode.recurring)return [{text:'-/- 定常',color:'light-gray'}];
+  if(!next)return mode.kind?[{text:'?/? '+mode.kind,color:'light-gray'}]:[];
+  const day=next.date.split('-'),today=todayLocal(now);
+  // A recurring card with an explicit date but no confirmed next actor
+  // shows the date and recurrence, never a fabricated Act/確認 owner.
+  const suffix=mode.kind||'定常';
+  return [{text:Number(day[1])+'/'+Number(day[2])+' '+suffix,
+   color:next.date<today?'orange':next.date===today?'yellow':'light-gray'}];
+ }
+
+ root.KoyoriNextReviewCore=Object.freeze({valid,inspect,condition,todayLocal,weekEnd,bucket,included,nextSchedule,frontBadge,actionKind,actionBadge});
 })(window);
