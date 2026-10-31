@@ -11,10 +11,11 @@
   <p>このページにカードの情報は表示・保存されません。</p>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
   <script src="./view/task-projection-core.js?v=20261025-owner-sync"></script>
-  <script src="./view/next-review-core.js?v=20261031-front-timing-v1"></script>
+  <script src="./view/next-review-core.js?v=20261031-label-timing-preview-v1"></script>
   <script src="./view/top-summary-core.js?v=20261025-semantic-compact-v3"></script>
   <script src="./view/checklist-due-core.js?v=20261026-empty-state-v2"></script>
   <script src="./view/priority-save-core.js?v=20261027-auto-request-v1"></script>
+  <script src="./view/priority-migration-core.js?v=20261031-label-parity-preview-v1"></script>
   <script>
     'use strict';
 
@@ -48,6 +49,25 @@
       const core=window.KoyoriNextReviewCore;
       if (!core||typeof core.frontBadge!=='function') return [];
       return core.frontBadge(description,new Date());
+    }
+
+    // A new priority label only controls front appearance when it matches
+    // the still-canonical description priority, and the action kind is unambiguous.
+    // All other cards retain original priority/owner/date front badges.
+    function migratedFrontBadges(card) {
+      const c=window.KoyoriPriorityMigrationCore;
+      const timing=window.KoyoriNextReviewCore;
+      if(!card||!c||!timing||typeof c.inspectPriorityLabels!=='function'||
+        typeof timing.actionKind!=='function'||typeof timing.actionBadge!=='function')
+        return null;
+      const parity=c.inspectPriorityLabels(card.desc,card.labels);
+      if(parity.status!=='ready')return null;
+      const kind=timing.actionKind(card.desc,card.labels);
+      if(kind.invalid||(!kind.kind&&!kind.recurring))return null;
+      // An invalid explicit schedule must not be silently replaced with ?/?.
+      if(timing.inspect(card.desc).invalid||timing.nextSchedule(card.desc).invalid)
+        return null;
+      return badgeFor(card.desc).concat(timing.actionBadge(card.desc,card.labels,new Date()));
     }
 
     // The board-local Trello idShort is read-only, not a second identifier store.
@@ -159,7 +179,7 @@
         return Promise.all([
           // The front intentionally excludes the card number; read only what
           // priority, owner and timing require.
-          t.card('id', 'name', 'desc'),
+          t.card('id', 'name', 'desc', 'labels'),
           t.get('card', 'shared', 'priority', null)
             .then(value=>({ok:true,value}),()=>({ok:false,value:null}))
         ])
@@ -174,6 +194,8 @@
               const result=await core.autoConsume(t,card);
               if(result.status==='saved'){saved=result.value;readOK=true;}
             }
+            const staged=migratedFrontBadges(card);
+            if(staged!==null)return staged;
             return priorityBadgesFor(card&&card.name,saved,card&&card.desc,readOK)
               .concat(badgeFor(card&&card.desc),timingBadgesFor(card&&card.desc));
           })
