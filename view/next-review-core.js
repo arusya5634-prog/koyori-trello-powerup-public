@@ -41,6 +41,17 @@
   const d=new Date(today+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+(7-d.getUTCDay())%7);
   return d.toISOString().slice(0,10);
  }
+ // Calendar-day timing for both action and standalone schedule badges.
+ // '次回確認日' is a follow-up, not a contractual Trello due date.
+ // Compare ISO calendar days, not milliseconds, to avoid timezone/DST drift.
+ function timingBadgeColor(target,today){
+  if(!valid(target)||!valid(today))return null;
+  if(target<today)return 'red';
+  if(target===today)return 'orange';
+  const tomorrow=new Date(today+'T00:00:00Z');
+  tomorrow.setUTCDate(tomorrow.getUTCDate()+1);
+  return target===tomorrow.toISOString().slice(0,10)?'yellow':'light-gray';
+ }
  function bucket(desc,today){
   const info=inspect(desc);
   if(info.invalid)return 'invalid';
@@ -91,9 +102,9 @@
   if(!choices.length)return [];
   choices.sort((a,b)=>a.date.localeCompare(b.date)||a.rank-b.rank);
   const next=choices[0],today=todayLocal(now);
-  const past=next.date<today,day=next.date.split('-');
+  const day=next.date.split('-');
   return [{text:'📅 '+Number(day[1])+'/'+Number(day[2])+' '+next.label,
-   color:past?'orange':next.date===today?'yellow':'light-gray'}];
+   color:timingBadgeColor(next.date,today)}];
  }
 
  // PREVIEW: a classification is independent of whether a task is recurring.
@@ -145,14 +156,14 @@
   const next=choices[0]||null;
   if(!mode.kind&&!mode.recurring)return [];
   if(!next&&mode.recurring)return [{text:'-/- 定常',color:'light-gray'}];
-  if(!next)return mode.kind?[{text:'?/? '+mode.kind,color:'light-gray'}]:[];
+  if(!next)return mode.kind?[{text:'?/? '+mode.kind,color:'purple'}]:[];
   const day=next.date.split('-'),today=todayLocal(now);
   // A recurring card with an explicit date but no confirmed next actor
   // shows the date and recurrence, never a fabricated Act/確認 owner.
   const suffix=mode.kind||'定常';
   return [{text:Number(day[1])+'/'+Number(day[2])+' '+suffix,
-   color:next.date<today?'orange':next.date===today?'yellow':'light-gray'}];
+   color:timingBadgeColor(next.date,today)}];
  }
 
- root.KoyoriNextReviewCore=Object.freeze({valid,inspect,condition,todayLocal,weekEnd,bucket,included,nextSchedule,frontBadge,actionKind,actionBadge});
+ root.KoyoriNextReviewCore=Object.freeze({valid,inspect,condition,todayLocal,weekEnd,timingBadgeColor,bucket,included,nextSchedule,frontBadge,actionKind,actionBadge});
 })(window);
