@@ -398,11 +398,12 @@
  // Separate, read-only "今日の判断" entry. It consumes the existing action,
  // priority and calendar parsers but does not alter the multi-filter Focus UI.
  // Only user-action and confirmed reached follow-ups are immediate candidates.
- function todayDecisions(cards,reviewCore,focusCore,calendar,today,limit=4){
+ function todayDecisions(cards,reviewCore,focusCore,calendar,today){
   if(!Array.isArray(cards)||!calendar?.valid?.(today)||
      !reviewCore?.derive||!focusCore?.stepInfo||!calendar?.inspect)
    return {ready:false,items:[],reason:'invalid-source'};
-  const max=Number.isSafeInteger(limit)&&limit>=1&&limit<=4?limit:4;
+  // Return all independently eligible cards. The UI distinguishes today's
+  // high-signal priorities from other actions without truncating the source.
   const seen=new Set(),items=[];let eligible=0,unranked=0;
   const ranks={emergency:0,urgent:1,soon:2,normal:3};
   for(const card of cards){
@@ -446,7 +447,7 @@
    String(a.date||'').localeCompare(String(b.date||''))||
    (a.card.order??0)-(b.card.order??0)||
    a.card.id.localeCompare(b.card.id));
-  return Object.freeze({ready:true,items:Object.freeze(items.slice(0,max)),
+  return Object.freeze({ready:true,items:Object.freeze(items),
    eligible,unranked,inspected:cards.length,mutatesTrello:false,
    sendsReminders:false,fetchesActivity:false});
  }
