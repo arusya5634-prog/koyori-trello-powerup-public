@@ -173,6 +173,7 @@ input,select{font-size:15px;padding:10px}
 .focus-choice-label{font-size:15px;line-height:1.5;font-weight:700;margin:0 0 7px;color:inherit}
 .focus-choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .focus-choice-grid-four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.focus-choice-grid-two{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(max-width:700px){.focus-choice-grid,.focus-choice-grid-four{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-color-scheme:dark){.focus-choice-group+.focus-choice-group{border-top-color:#454f59}}
 .priority-snapshot-output{width:100%;box-sizing:border-box;min-height:180px;margin-top:9px;padding:10px;font:12px/1.5 ui-monospace,monospace;resize:vertical;white-space:pre;overflow:auto}
@@ -189,6 +190,10 @@ body.decision-entry #decision-standalone{display:block!important}
 .decision-card p{font-size:15px;line-height:1.65;margin:7px 0}
 .decision-card .decision-reason{font-weight:650}
 .decision-disclaimer{font-size:14px;line-height:1.6;opacity:.85}
+.decision-group h2{font-size:18px;margin:22px 0 9px}
+.decision-other{margin:18px 0;border-top:1px solid #aeb7c0;padding-top:16px}
+.decision-other summary{font-weight:650;font-size:16px;cursor:pointer;line-height:1.7}
+.decision-other summary:focus-visible{outline:2px solid #0067dd;outline-offset:3px}
 </style>
 </head>
 <body>
@@ -196,7 +201,7 @@ body.decision-entry #decision-standalone{display:block!important}
 <h1>こより｜今日の判断</h1>
 <p class="decision-intro" id="decision-intro" role="status">Trelloから今日の候補を確認しています…</p>
 <div id="decision-results" aria-live="polite"></div>
-<p class="decision-disclaimer">最大4件。確定した次の行動と確認日が到来した案件のみ表示します。確認日は正式な期限ではなく、実施・回答・完了も未確認です。</p>
+<p class="decision-disclaimer">判断候補に固定件数の上限はありません。優先度が高い案件と確認日が到来した案件を先に表示し、その他の次の行動は展開できます。確認日は正式な期限ではなく、実施・回答・完了も未確認です。</p>
 </section>
 <h1 id="entry-title">こより｜今日の整理</h1>
 <nav class="mode-nav" id="entry-nav" aria-label="全体管理の表示切り替え" hidden>
@@ -216,16 +221,15 @@ body.decision-entry #decision-standalone{display:block!important}
 <div id="daily-data-note" role="status" hidden></div>
 <section id="focus-pane">
 <div class="focus-header focus-review-entry">
-  <div class="focus-guide" role="status" aria-live="polite"><strong id="focus-guide-title">閲覧中：朝の整理</strong><div id="focus-description">今日の重点候補を最大4件表示します。今日中の完了を求めるものではありません。</div></div>
+  <div class="focus-guide" role="status" aria-live="polite"><strong id="focus-guide-title">閲覧中：自分が動く</strong><div id="focus-description">自分が次に行動するカードを全件対象に一覧します。「今日の判断」の重点候補とは異なる、管理用の全件表示です。</div></div>
   <button type="button" id="focus-open-review" title="Trelloデータの記載・ラベルに関する点検を開きます">記載チェック（要確認）</button>
 </div>
 <div id="invalid-review-warning" class="invalid-review-warning" role="status" hidden></div>
 <div class="focus-choices" role="group" aria-label="今日の見直し項目">
 <section class="focus-choice-group" role="group" aria-labelledby="focus-group-daily">
-<h3 class="focus-choice-label" id="focus-group-daily">日常の実行・確認</h3>
-<div class="focus-choice-grid">
-<button type="button" data-focus="morning" aria-pressed="true"><strong id="focus-count-morning">—</strong>朝の整理</button>
-<button type="button" data-focus="self" aria-pressed="false"><strong id="focus-count-self">—</strong>自分が動く</button>
+<h3 class="focus-choice-label" id="focus-group-daily">実行・確認の全件管理</h3>
+<div class="focus-choice-grid focus-choice-grid-two">
+<button type="button" data-focus="self" aria-pressed="true"><strong id="focus-count-self">—</strong>自分が動く</button>
 <button type="button" data-focus="waiting" aria-pressed="false"><strong id="focus-count-waiting">—</strong>確認待ち</button>
 </div>
 </section>
@@ -361,10 +365,10 @@ const ACTIONS=reviewCore.ACTIONS;
 const analysisEntry=/(?:^\?|&)entry=analysis(?:&|$)/u.test((window.location&&window.location.search)||'');
 const decisionEntry=/(?:^\?|&)entry=brief(?:&|$)/u.test((window.location&&window.location.search)||'');
 const reviewState={view:analysisEntry?'priority':'focus',query:'',list:'all',kind:'all',loaded:false,loadError:false};
-const focusState={group:'morning',query:'',date:'all',missingOnly:false,conditionOnly:false,visibleLimit:5};
+const focusState={group:'self',query:'',date:'all',missingOnly:false,conditionOnly:false,visibleLimit:5};
 const FOCUS_BATCH_SIZE=5;
 const resetFocusLimit=()=>{focusState.visibleLimit=FOCUS_BATCH_SIZE;};
-const focusGuides=Object.freeze({"morning":{"name":"朝の整理","short":"今日の重点候補を最大4件表示","body":"自分が動く仕事と確認日が到来した委任先の仕事から、優先度順に最大4件を表示します。今日中の完了を求めるものではありません。"},"self":{"name":"自分が動く","short":"自分が次に行動するカード","body":"「自分が次に動く」カードを一覧します。表示件数は今日中に終える仕事の量ではありません。"},"waiting":{"name":"確認待ち","short":"相手の回答・作業を待つカード","body":"「次に確認する」カードを一覧します。確認日がまだ来ていないものや日付未設定のものも含みます。"},"radar":{"name":"確認レーダー","short":"確認待ちを確認日と記録状況で整理","body":"確認待ちを確認日到来・今週これから・それ以降・日付なし・日付要確認などに分けます。次回確認日は仕事の締切ではありません。"},"quality":{"name":"点検候補","short":"情報不足や長期間未更新の点検候補","body":"次の一手・担当者・確認日の情報不足や長期間更新のないカードを表示します。停滞・遅延・未実施とは断定しません。"},"weekly":{"name":"週次見直し","short":"重点・確認・点検・構想の候補を最大9件","body":"重点・確認待ち・点検候補・来週の確認・構想を重複なく最大9件表示します。カードの更新日時は進捗の証明ではなく、前週との実績差分は未検証です。"},"decision":{"name":"判断候補","short":"確認待ちから今日の確認対象と条件待ちを最大4件","body":"確認日到来・記録点検・条件付き待機から最大4件を表示します。記録上の次の一手と実行済みは別です。この画面ではTrello活動履歴の取得・前週差分はありません。"},"undated":{"name":"日付なし","short":"次回確認日のない確認待ちカード","body":"「次に確認する」のうち次回確認日が未設定のカードを表示します。期限切れや催促の指示ではありません。"},"thinking":{"name":"考える","short":"検討・構想に分類されたカード","body":"「検討・構想」カードを一覧します。直ちに実行すべき仕事という意味ではありません。"},"unverified":{"name":"現況未確認","short":"状況の記録を確認したいカード","body":"現在地や状況に未確認の記載があるカードを表示します。作業が止まっていると判定したものではありません。"}});
+const focusGuides=Object.freeze({"self":{"name":"自分が動く","short":"自分のアクションを全件確認（管理用）","body":"自分が次に動くカードを全件対象に一覧します。今日の重点行動は別画面の「今日の判断」で確認してください。表示件数は今日中に終える仕事の量ではありません。"},"waiting":{"name":"確認待ち","short":"相手の回答・作業を待つカード","body":"「次に確認する」カードを一覧します。確認日がまだ来ていないものや日付未設定のものも含みます。"},"radar":{"name":"確認レーダー","short":"確認待ちを確認日と記録状況で整理","body":"確認待ちを確認日到来・今週これから・それ以降・日付なし・日付要確認などに分けます。次回確認日は仕事の締切ではありません。"},"quality":{"name":"点検候補","short":"情報不足や長期間未更新の点検候補","body":"次の一手・担当者・確認日の情報不足や長期間更新のないカードを表示します。停滞・遅延・未実施とは断定しません。"},"weekly":{"name":"週次見直し","short":"重点・確認・点検・構想の候補を最大9件","body":"重点・確認待ち・点検候補・来週の確認・構想を重複なく最大9件表示します。カードの更新日時は進捗の証明ではなく、前週との実績差分は未検証です。"},"decision":{"name":"判断候補","short":"確認待ちから今日の確認対象と条件待ちを最大4件","body":"確認日到来・記録点検・条件付き待機から最大4件を表示します。記録上の次の一手と実行済みは別です。この画面ではTrello活動履歴の取得・前週差分はありません。"},"undated":{"name":"日付なし","short":"次回確認日のない確認待ちカード","body":"「次に確認する」のうち次回確認日が未設定のカードを表示します。期限切れや催促の指示ではありません。"},"thinking":{"name":"考える","short":"検討・構想に分類されたカード","body":"「検討・構想」カードを一覧します。直ちに実行すべき仕事という意味ではありません。"},"unverified":{"name":"現況未確認","short":"状況の記録を確認したいカード","body":"現在地や状況に未確認の記載があるカードを表示します。作業が止まっていると判定したものではありません。"}});
 const dateGuides=Object.freeze({"due":{"name":"確認日到来","short":"次回確認日が今日以前のカード","body":"次回確認日が今日以前のもの。正式な納期や遅延の判定ではありません。"},"week":{"name":"今週これから","short":"次回確認日が明日から日曜までのカード","body":"次回確認日が今日より後で、今週の日曜日までのものです。"},"none":{"name":"日付未設定","short":"次回確認日の記載がないカード","body":"次回確認日の記載がないもの。催促すべきという意味ではありません。"},"all":{"name":"すべて","short":"確認日の状態で絞り込まない","body":"次回確認日の状態を問わず表示します。日付の不正もここでは除外しません。"}});
 document.querySelectorAll('[data-focus]').forEach(b=>{
  const guide=focusGuides[b.dataset.focus];if(guide)b.setAttribute('title',guide.short);
@@ -667,9 +671,8 @@ function paintFocus(){
  // Decision shortlist must use the board's JST review date, not a device timezone.
  const decisionToday=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10);
  const filterToday=focusState.group==='decision'?decisionToday:today;
- for(const group of ['morning','self','waiting','radar','quality','weekly','decision','undated','thinking','unverified']){
-  const items=group==='morning'?focusV2.daily(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
-   group==='radar'?focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+ for(const group of ['self','waiting','radar','quality','weekly','decision','undated','thinking','unverified']){
+  const items=group==='radar'?focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
    group==='quality'?focusV2.quality(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
    group==='weekly'?focusV2.weeklyOverview(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
    group==='decision'?focusV2.weeklyDecisionCards(state.cards,reviewCore,focusCore,reviewCalendar,decisionToday).items:
@@ -679,7 +682,7 @@ function paintFocus(){
  }
  document.querySelectorAll('[data-focus]').forEach(b=>
   b.setAttribute('aria-pressed',String(b.dataset.focus===focusState.group)));
- const guide=focusGuides[focusState.group]||focusGuides.morning;
+ const guide=focusGuides[focusState.group]||focusGuides.self;
  el('focus-guide-title').textContent='閲覧中：'+guide.name;
  let detail=guide.body;
  if(focusState.group==='radar'){
@@ -697,14 +700,14 @@ function paintFocus(){
  el('focus-description').textContent=detail;
  const dateGuide=dateGuides[focusState.date]||dateGuides.all;
  el('focus-filter-guide').textContent='絞り込み：'+dateGuide.name+'｜'+dateGuide.body;
- // Invalid follow-up dates must never silently disappear from the morning view.
+ // Invalid follow-up dates need an explicit alert in the confirmation radar.
  // They are not overdue; keep them separate from cards with no review date.
  const invalidCards=state.cards.filter(c=>{
   const review=reviewCore.derive(c);
   return !review.paused&&!review.dataMissing&&reviewCalendar.inspect(c.desc).invalid;
  });
  const warning=el('invalid-review-warning');
- warning.hidden=focusState.group!=='morning'||!invalidCards.length;
+ warning.hidden=focusState.group!=='radar'||!invalidCards.length;
  warning.replaceChildren();
  if(!warning.hidden){
   const heading=document.createElement('strong');
@@ -723,7 +726,7 @@ function paintFocus(){
  }
  const undated=focusCore.undatedWaiting(state.cards,reviewCore,reviewCalendar);
  const spotlight=focusCore.weeklyUndated(state.cards,reviewCore,reviewCalendar,today,4);
- el('weekly-undated-tip').hidden=focusState.group!=='morning'||!undated.length;
+ el('weekly-undated-tip').hidden=focusState.group!=='waiting'||!undated.length;
  el('weekly-undated-summary').textContent=undated.length?
   '確認日なし'+undated.length+'件から、今週は'+spotlight.length+'件を表示。毎週候補が入れ替わります。期限や催促の指示ではありません。':'';
  const weeklyCards=el('weekly-undated-cards');
@@ -753,9 +756,7 @@ function paintFocus(){
    item.priority===null?'優先度：未照合':'優先度：'+LEVELS[item.priority].name].join(' ／ ');
   article.append(head,action,current,meta);weeklyCards.append(article);
  }
- const all=focusState.group==='morning'?
-  focusV2.daily(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
-  focusState.group==='radar'?focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
+ const all=focusState.group==='radar'?focusV2.radar(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
   focusState.group==='quality'?focusV2.quality(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
   focusState.group==='weekly'?focusV2.weeklyOverview(state.cards,reviewCore,focusCore,reviewCalendar,today).items:
   focusState.group==='decision'?focusV2.weeklyDecisionCards(state.cards,reviewCore,focusCore,reviewCalendar,decisionToday).items:
@@ -815,8 +816,6 @@ function paintFocus(){
      (focusState.group==='decision'?((decisionLabel||'確認候補')+' / '):'')+
     (focusState.group==='radar'?
     '確認状況：'+({due:'確認日到来',week:'今週',later:'それ以降',undated:'日付なし',invalid:'日付の確認が必要',unknownData:'情報不足'}[radarBucket]||'未分類')+' / ':'')+
-    (focusState.group==='morning'?
-    ((review.action.includes('自分が次に動く'))?'自分が次に動く':'次回確認日が到来')+' / ':'')+
     card.listName+' / '+(review.project.join('・')||'分類未設定')+
     (ball?' / ボール：'+ball:'');
   title.append(link,meta);top.append(marker,title);
@@ -1073,18 +1072,21 @@ async function decisionMain(){
     readPending:false,order:i,url:validUrl?card.url:null};
   });
   const today=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10);
-  const report=focusV2.todayDecisions(normalized,reviewCore,focusCore,reviewCalendar,today,4);
+  const report=focusV2.todayDecisions(normalized,reviewCore,focusCore,reviewCalendar,today);
   if(!report.ready)throw Error(report.reason||'selection-failed');
-  intro.textContent=today+' 時点｜'+report.inspected+'件確認／判断候補'+report.items.length+'件'+
+  const spotlight=report.items.filter(item=>item.kind==='confirm'||item.priority==='emergency'||item.priority==='urgent');
+  const further=report.items.filter(item=>!(item.kind==='confirm'||item.priority==='emergency'||item.priority==='urgent'));
+  intro.textContent=today+' 時点｜'+report.inspected+'件確認／判断・行動候補'+report.items.length+
+   '件（重点'+spotlight.length+'件／その他'+further.length+'件）'+
    (report.unranked?'／優先度またはリンクの照合待ち'+report.unranked+'件':'');
   out.replaceChildren();
   if(!report.items.length){
    const empty=document.createElement('div');empty.className='empty';
-   empty.textContent='今日、直ちに判断を求める候補はありません。';
+   empty.textContent='今日、確定した行動・確認日の到来した候補はありません。';
    out.append(empty);return;
   }
   const priorityText={emergency:'🚨 最優先',urgent:'🔴 急ぎ',soon:'🟡 早め',normal:'通常'};
-  for(const item of report.items){
+  const renderItem=(item,target)=>{
    const card=item.card,box=document.createElement('article');box.className='decision-card';
    const link=document.createElement('a');link.textContent=String(card.name||'カード');
    link.href=card.url;link.target='_blank';link.rel='noopener noreferrer';
@@ -1096,7 +1098,23 @@ async function decisionMain(){
    note.textContent='現在地：'+(item.status||'記載・読取要確認')+
     (item.owner?'｜ボール：'+item.owner:'')+
     (item.stepCaution?'｜'+item.stepCaution:'');
-   box.append(link,reason,step,note);out.append(box);
+   box.append(link,reason,step,note);target.append(box);
+  };
+  if(spotlight.length){
+   const group=document.createElement('section');group.className='decision-group';
+   const heading=document.createElement('h2');heading.textContent='優先度が高い・確認日が到来（'+spotlight.length+'件）';
+   group.append(heading);
+   for(const item of spotlight)renderItem(item,group);
+   out.append(group);
+  }
+  if(further.length){
+   const details=document.createElement('details');details.className='decision-other';
+   details.open=!spotlight.length;
+   const summary=document.createElement('summary');
+   summary.textContent='その他の次の行動 '+further.length+'件'+(spotlight.length?'（クリックで展開）':'');
+   details.append(summary);
+   for(const item of further)renderItem(item,details);
+   out.append(details);
   }
  }catch(_){
   intro.textContent='Trelloの取得または候補の照合に失敗しました。';
