@@ -285,6 +285,8 @@
           light:iconDark
         };
         return [
+          {icon,text:'今日の判断',condition:'edit',
+            callback:function(t){return t.modal({url:currentReviewUrl('brief'),title:'今日の判断',fullscreen:true});}},
           {icon,text:'今日の整理',condition:'edit',
             callback:function(t){return t.modal({url:currentReviewUrl('focus'),title:'今日の整理',fullscreen:true});}},
           {icon,text:'全体管理',condition:'edit',

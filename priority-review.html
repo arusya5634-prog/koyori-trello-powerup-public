@@ -177,9 +177,27 @@ input,select{font-size:15px;padding:10px}
 @media(prefers-color-scheme:dark){.focus-choice-group+.focus-choice-group{border-top-color:#454f59}}
 .priority-snapshot-output{width:100%;box-sizing:border-box;min-height:180px;margin-top:9px;padding:10px;font:12px/1.5 ui-monospace,monospace;resize:vertical;white-space:pre;overflow:auto}
 .priority-snapshot-output[hidden]{display:none}
+
+/* Isolated read-only decision landing; ordinary Focus and Analysis remain unchanged. */
+body.decision-entry > :not(#decision-standalone):not(script){display:none!important}
+body.decision-entry #decision-standalone{display:block!important}
+#decision-standalone{max-width:900px;margin:0 auto;padding:16px}
+#decision-standalone h1{margin:0 0 12px;font-size:24px}
+.decision-intro{font-size:15px;line-height:1.65}
+.decision-card{background:var(--ds-surface,transparent);border:1px solid #89939d;border-radius:12px;padding:16px;margin:14px 0}
+.decision-card a{font-weight:700;font-size:18px;word-break:break-word}
+.decision-card p{font-size:15px;line-height:1.65;margin:7px 0}
+.decision-card .decision-reason{font-weight:650}
+.decision-disclaimer{font-size:14px;line-height:1.6;opacity:.85}
 </style>
 </head>
 <body>
+<section id="decision-standalone" hidden aria-label="今日の判断（読み取り専用）">
+<h1>こより｜今日の判断</h1>
+<p class="decision-intro" id="decision-intro" role="status">Trelloから今日の候補を確認しています…</p>
+<div id="decision-results" aria-live="polite"></div>
+<p class="decision-disclaimer">最大4件。確定した次の行動と確認日が到来した案件のみ表示します。確認日は正式な期限ではなく、実施・回答・完了も未確認です。</p>
+</section>
 <h1 id="entry-title">こより｜今日の整理</h1>
 <nav class="mode-nav" id="entry-nav" aria-label="全体管理の表示切り替え" hidden>
 <button type="button" id="tab-focus" data-view="focus" aria-selected="false" hidden>今日</button>
@@ -341,6 +359,7 @@ const prioritySave=window.KoyoriPrioritySaveCore;
 const priorityMigration=window.KoyoriPriorityMigrationCore;
 const ACTIONS=reviewCore.ACTIONS;
 const analysisEntry=/(?:^\?|&)entry=analysis(?:&|$)/u.test((window.location&&window.location.search)||'');
+const decisionEntry=/(?:^\?|&)entry=brief(?:&|$)/u.test((window.location&&window.location.search)||'');
 const reviewState={view:analysisEntry?'priority':'focus',query:'',list:'all',kind:'all',loaded:false,loadError:false};
 const focusState={group:'morning',query:'',date:'all',missingOnly:false,conditionOnly:false,visibleLimit:5};
 const FOCUS_BATCH_SIZE=5;
@@ -1021,8 +1040,76 @@ el('review-clear').addEventListener('click',()=>{
  paintReview();
 });
 
+
+// Only the dedicated entry takes this light read-only path; no Power-Up shared
+// priority reads, no board history, no card writes and no extra Focus controls.
+async function decisionMain(){
+ const region=el('decision-standalone'),intro=el('decision-intro'),out=el('decision-results');
+ document.body.classList.add('decision-entry');region.hidden=false;
+ try{
+  const [raw,lists]=await Promise.all([
+   t.cards('id','name','url','idList','labels','desc'),
+   t.lists('id','name')
+  ]);
+  if(!Array.isArray(raw)||!Array.isArray(lists))throw Error('source-unavailable');
+  const names=new Map(lists.map(l=>[l.id,l.name]));
+  const dictionary={'最優先':'emergency','急ぎ':'urgent','早め':'soon','通常':'normal'};
+  const normalized=raw.map((card,i)=>{
+   const desc=typeof card.desc==='string'?card.desc:'';
+   const labels=Array.isArray(card.labels)?card.labels.map(x=>
+    typeof x==='string'?x:x&&x.name).filter(x=>typeof x==='string'):[];
+   const values=[...desc.matchAll(/^\s*(?:[-*]\s*)?現在の優先度\s*[:：]\s*(.*?)\s*$/gmu)]
+    .map(x=>x[1].trim());
+   const priorityLabels=labels.filter(x=>Object.prototype.hasOwnProperty.call(dictionary,x));
+   // Fail closed on unreadable/mismatched source. A fallback 'normal' rank
+   // would conceal a priority disagreement, so do not use one here.
+   const verified=values.length===1&&priorityLabels.length===1&&
+    values[0]===priorityLabels[0];
+   const validUrl=typeof card.url==='string'&&
+    /^https:\/\/trello\.com\/c\/[A-Za-z0-9]+(?:[/?#]|$)/u.test(card.url);
+   return {id:card.id,name:card.name,desc,labels,
+    labelsMissing:!Array.isArray(card.labels),listName:names.get(card.idList)||'リスト不明',
+    saved:verified?dictionary[values[0]]:null,legacy:null,readError:!verified||!validUrl,
+    readPending:false,order:i,url:validUrl?card.url:null};
+  });
+  const today=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10);
+  const report=focusV2.todayDecisions(normalized,reviewCore,focusCore,reviewCalendar,today,4);
+  if(!report.ready)throw Error(report.reason||'selection-failed');
+  intro.textContent=today+' 時点｜'+report.inspected+'件確認／判断候補'+report.items.length+'件'+
+   (report.unranked?'／優先度またはリンクの照合待ち'+report.unranked+'件':'');
+  out.replaceChildren();
+  if(!report.items.length){
+   const empty=document.createElement('div');empty.className='empty';
+   empty.textContent='今日、直ちに判断を求める候補はありません。';
+   out.append(empty);return;
+  }
+  const priorityText={emergency:'🚨 最優先',urgent:'🔴 急ぎ',soon:'🟡 早め',normal:'通常'};
+  for(const item of report.items){
+   const card=item.card,box=document.createElement('article');box.className='decision-card';
+   const link=document.createElement('a');link.textContent=String(card.name||'カード');
+   link.href=card.url;link.target='_blank';link.rel='noopener noreferrer';
+   const reason=document.createElement('p');reason.className='decision-reason';
+   reason.textContent=(priorityText[item.priority]||'優先度要確認')+'｜'+item.reason+
+    (item.date?'（'+item.date+'）':'');
+   const step=document.createElement('p');step.textContent='次の一手：'+item.step;
+   const note=document.createElement('p');
+   note.textContent='現在地：'+(item.status||'記載・読取要確認')+
+    (item.owner?'｜ボール：'+item.owner:'')+
+    (item.stepCaution?'｜'+item.stepCaution:'');
+   box.append(link,reason,step,note);out.append(box);
+  }
+ }catch(_){
+  intro.textContent='Trelloの取得または候補の照合に失敗しました。';
+  out.replaceChildren();
+  const fail=document.createElement('div');fail.className='empty';
+  fail.textContent='推測で候補を表示せずに停止しました。ボードを再読込して確認してください。';
+  out.append(fail);
+ }
+}
+
 async function main(){
  t=TrelloPowerUp.iframe();
+ if(decisionEntry)return decisionMain();
  try{
   const [cards,lists]=await Promise.all([t.cards('id','name','url','idList','labels','due','dueComplete','dateLastActivity','desc'),t.lists('id','name')]);
   const names=new Map(lists.map(l=>[l.id,l.name]));

@@ -394,5 +394,62 @@
    historyAvailable:false,mutatesTrello:false};
  }
 
- root.KoyoriFocusV2Core=Object.freeze({daily,radar,thinking,quality,weekly,weeklyOverview,weeklyDecisionCards,datedNextAction});
+
+ // Separate, read-only "今日の判断" entry. It consumes the existing action,
+ // priority and calendar parsers but does not alter the multi-filter Focus UI.
+ // Only user-action and confirmed reached follow-ups are immediate candidates.
+ function todayDecisions(cards,reviewCore,focusCore,calendar,today,limit=4){
+  if(!Array.isArray(cards)||!calendar?.valid?.(today)||
+     !reviewCore?.derive||!focusCore?.stepInfo||!calendar?.inspect)
+   return {ready:false,items:[],reason:'invalid-source'};
+  const max=Number.isSafeInteger(limit)&&limit>=1&&limit<=4?limit:4;
+  const seen=new Set(),items=[];let eligible=0,unranked=0;
+  const ranks={emergency:0,urgent:1,soon:2,normal:3};
+  for(const card of cards){
+   if(!card||typeof card.id!=='string'||!card.id||seen.has(card.id))
+    return {ready:false,items:[],reason:'invalid-card-identity'};
+   seen.add(card.id);
+   if(typeof card.desc!=='string'||!Array.isArray(card.labels))continue;
+   const review=reviewCore.derive(card);
+   if(review.paused||review.dataMissing||review.manyActions)continue;
+   const own=review.action.includes('自分が次に動く');
+   const delegated=review.action.includes('次に確認する');
+   if(own===delegated)continue;
+   const date=calendar.inspect(card.desc);
+   if(date.invalid)continue;
+   if(delegated&&(!date.date||date.date>today))continue;
+   // Routine-only work is not urgent unless its explicit review day arrived.
+   if(review.routine&&own&&(!date.date||date.date>today))continue;
+   // An unconfirmed draft action must not become an instruction for today.
+   const step=focusCore.stepInfo(card.desc);
+   const provenance=datedNextAction(card.desc,today);
+   const next=provenance.ambiguous?provenance.value:step.value;
+   if(!next||(step.proposal&&!provenance.value))continue;
+   eligible++;
+   const rank=focusCore.priorityKey(card);
+   if(!Object.prototype.hasOwnProperty.call(ranks,rank)){
+    unranked++;continue;
+   }
+   items.push(Object.freeze({
+    card,kind:own?'self':'confirm',
+    reason:own?'次の行動が自分':'確認日到来',
+    step:next,owner:delegated?focusCore.ballOwner(card.desc):null,
+    status:focusCore.currentState(card.desc),
+    date:delegated?date.date:null,priority:rank,
+    stepCaution:provenance.ambiguous?'次の一手の記録を要照合':null
+   }));
+  }
+  // Priority always wins; at equal priority a reached follow-up comes first.
+  // No fixed 3:1 quota, no filler from condition-only or undated cards.
+  items.sort((a,b)=>ranks[a.priority]-ranks[b.priority]||
+   (a.kind==='confirm'?0:1)-(b.kind==='confirm'?0:1)||
+   String(a.date||'').localeCompare(String(b.date||''))||
+   (a.card.order??0)-(b.card.order??0)||
+   a.card.id.localeCompare(b.card.id));
+  return Object.freeze({ready:true,items:Object.freeze(items.slice(0,max)),
+   eligible,unranked,inspected:cards.length,mutatesTrello:false,
+   sendsReminders:false,fetchesActivity:false});
+ }
+
+ root.KoyoriFocusV2Core=Object.freeze({daily,radar,thinking,quality,weekly,weeklyOverview,weeklyDecisionCards,datedNextAction,todayDecisions});
 })(window);
