@@ -185,15 +185,60 @@ body.decision-entry #decision-standalone{display:block!important}
 #decision-standalone{max-width:900px;margin:0 auto;padding:16px}
 #decision-standalone h1{margin:0 0 12px;font-size:24px}
 .decision-intro{font-size:15px;line-height:1.65}
-.decision-card{background:var(--ds-surface,transparent);border:1px solid #89939d;border-radius:12px;padding:16px;margin:14px 0}
-.decision-card a{font-weight:700;font-size:18px;word-break:break-word}
-.decision-card p{font-size:15px;line-height:1.65;margin:7px 0}
-.decision-card .decision-reason{font-weight:650}
-.decision-disclaimer{font-size:14px;line-height:1.6;opacity:.85}
-.decision-group h2{font-size:18px;margin:22px 0 9px}
-.decision-other{margin:18px 0;border-top:1px solid #aeb7c0;padding-top:16px}
-.decision-other summary{font-weight:650;font-size:16px;cursor:pointer;line-height:1.7}
-.decision-other summary:focus-visible{outline:2px solid #0067dd;outline-offset:3px}
+/* Decision dashboard: keep the decision/action visible; show the original evidence on demand. */
+.decision-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}
+.decision-overview-item{border:1px solid #a7b2c1;border-radius:10px;padding:10px 12px;min-width:0;background:var(--ds-surface,transparent)}
+.decision-overview-item strong{display:block;font-size:23px;line-height:1.25;color:var(--ds-text,#172b4d);font-variant-numeric:tabular-nums}
+.decision-overview-item span{font-size:13px;color:var(--ds-text-subtle,#44546f)}
+.decision-guide{font-size:14px;color:var(--ds-text-subtle,#44546f);line-height:1.55;margin:4px 0 12px}
+.decision-group h2{font-size:18px;margin:24px 0 8px}
+.decision-group-note{font-size:13px;line-height:1.5;color:var(--ds-text-subtle,#44546f);margin:0 0 10px}
+.decision-card{background:var(--ds-surface,transparent);border:1px solid #a7b2c1;border-radius:10px;padding:14px 16px;margin:10px 0;min-width:0}
+.decision-card[hidden]{display:none!important}
+.decision-card-focus{border-left:4px solid #579dff}
+.decision-card-focus.decision-priority-emergency{border-left-color:#e2483d}
+.decision-card-focus.decision-priority-urgent{border-left-color:#e2483d}
+.decision-card-focus.decision-priority-soon{border-left-color:#e2b203}
+.decision-card-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:5px 14px}
+.decision-link{font-weight:700;font-size:17px;line-height:1.5;word-break:break-word;color:var(--ds-link,#0c66e4)}
+.decision-tags{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.decision-pill{display:inline-flex;align-items:center;border-radius:6px;padding:3px 7px;background:#e9edf2;color:#27364b;font-size:12px;font-weight:650;line-height:1.4}
+.decision-pill.decision-priority-emergency,.decision-pill.decision-priority-urgent{background:#ffe9e7;color:#8e211a}
+.decision-pill.decision-priority-soon{background:#fff2bf;color:#6b4e00}
+.decision-pill.decision-priority-normal{background:#e9edf2;color:#38475c}
+.decision-pill.decision-reached{background:#fff2dc;color:#8a4c00}
+.decision-task{font-size:15px;line-height:1.65;margin:11px 0 5px;overflow-wrap:anywhere}
+.decision-task strong{display:inline-block;margin-right:9px;color:var(--ds-text,#172b4d)}
+.decision-status{font-size:13px;line-height:1.55;margin:6px 0;color:var(--ds-text-subtle,#44546f);overflow-wrap:anywhere}
+.decision-condition{font-size:13px;line-height:1.6;margin:7px 0;color:var(--ds-text,#172b4d);overflow-wrap:anywhere}
+.decision-condition strong{color:var(--ds-text-subtle,#44546f);margin-right:8px}
+.decision-caution{font-size:13px;line-height:1.5;color:#8a4c00;margin:6px 0}
+.decision-more{border-top:1px solid #d6dce4;margin-top:10px;padding-top:7px}
+.decision-more summary{cursor:pointer;font-size:13px;font-weight:650;color:var(--ds-link,#0c66e4)}
+.decision-more summary:focus-visible,.decision-other summary:focus-visible{outline:2px solid #0067dd;outline-offset:3px}
+.decision-evidence{padding:8px 2px 0}
+.decision-evidence p{font-size:13px;line-height:1.6;margin:5px 0;overflow-wrap:anywhere}
+.decision-evidence-label{font-size:12px;font-weight:700;color:var(--ds-text-subtle,#44546f);margin:10px 0 4px}
+.decision-full-description{white-space:pre-wrap;overflow:auto;max-height:260px;padding:10px;background:var(--ds-surface-sunken,#f4f5f7);border-radius:6px;font-family:inherit;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.decision-other{margin:20px 0;border-top:1px solid #aeb7c0;padding-top:12px}
+.decision-other > summary{font-weight:700;font-size:17px;cursor:pointer;line-height:1.6}
+.decision-other > .decision-group-note{margin-top:8px}
+.decision-tools{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;align-items:center}
+.decision-tools input,.decision-tools select{box-sizing:border-box;font:inherit;font-size:14px;padding:8px;border:1px solid #89939d;border-radius:6px;background:var(--ds-surface,white);color:var(--ds-text,#172b4d);max-width:100%}
+.decision-tools input{flex:1 1 240px;min-width:0}
+.decision-tools select{flex:0 0 auto}
+.decision-filter-count{font-size:13px;color:var(--ds-text-subtle,#44546f)}
+.decision-card-compact{padding:10px 12px;margin:7px 0}
+.decision-card-compact .decision-link{font-size:15px}
+.decision-card-compact .decision-task{font-size:14px;margin:6px 0 0}
+.decision-card-compact .decision-more{margin-top:6px}
+.decision-empty{padding:14px;border:1px dashed #a7b2c1;border-radius:8px;font-size:14px}
+.decision-disclaimer{font-size:13px;line-height:1.6;opacity:.85;margin-top:16px}
+@media(max-width:620px){.decision-overview{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.decision-overview-item{padding:9px 7px}.decision-overview-item strong{font-size:20px}
+.decision-overview-item span{font-size:11px}.decision-card{padding:11px}
+.decision-card-head{display:block}.decision-tags{margin-top:6px}
+.decision-tools input{flex-basis:100%}}
 </style>
 </head>
 <body>
@@ -1086,34 +1131,122 @@ async function decisionMain(){
    out.append(empty);return;
   }
   const priorityText={emergency:'🚨 最優先',urgent:'🔴 急ぎ',soon:'🟡 早め',normal:'通常'};
-  const renderItem=(item,target)=>{
-   const card=item.card,box=document.createElement('article');box.className='decision-card';
-   const link=document.createElement('a');link.textContent=String(card.name||'カード');
+  const make=(tag,className,value)=>{
+   const node=document.createElement(tag);
+   if(className)node.className=className;
+   if(value!==undefined)node.textContent=String(value);
+   return node;
+  };
+  const board=make('div','decision-overview');
+  const totalKinds=[
+   [report.items.length,'候補の合計'],
+   [spotlight.length,'先に確認・判断'],
+   [further.length,'その他の行動']
+  ];
+  for(const [count,label] of totalKinds){
+   const part=make('div','decision-overview-item');
+   part.append(make('strong','',count),make('span','',label));
+   board.append(part);
+  }
+  out.append(board,make('p','decision-guide',
+   '優先度と記録された確認日による候補です。全件を今日中に実施する指示ではありません。'));
+  const renderItem=(item,target,compact=false)=>{
+   const card=item.card,box=make('article','decision-card '+(compact?'decision-card-compact':'decision-card-focus'));
+   box.classList.add('decision-priority-'+item.priority);
+   const head=make('div','decision-card-head');
+   const link=make('a','decision-link',card.name||'カード');
    link.href=card.url;link.target='_blank';link.rel='noopener noreferrer';
-   const reason=document.createElement('p');reason.className='decision-reason';
-   reason.textContent=(priorityText[item.priority]||'優先度要確認')+'｜'+item.reason+
-    (item.date?'（'+item.date+'）':'');
-   const step=document.createElement('p');step.textContent='次の一手：'+item.step;
-   const note=document.createElement('p');
-   note.textContent='現在地：'+(item.status||'記載・読取要確認')+
-    (item.owner?'｜ボール：'+item.owner:'')+
-    (item.stepCaution?'｜'+item.stepCaution:'');
-   box.append(link,reason,step,note);target.append(box);
+   const tags=make('div','decision-tags');
+   tags.append(make('span','decision-pill decision-priority-'+item.priority,
+    priorityText[item.priority]||'優先度要確認'));
+   if(item.kind==='confirm'){
+    const reached=item.date?'確認日 '+item.date+'（到来）':'確認日到来';
+    tags.append(make('span','decision-pill decision-reached',reached));
+   }else{
+    tags.append(make('span','decision-pill','自分が動く'));
+   }
+   head.append(link,tags);
+   const action=make('p','decision-task');
+   action.append(make('strong','',item.kind==='confirm'?'確認すること':'自分の次の一手'),
+    document.createTextNode(item.step||'記載・読取要確認'));
+   box.append(head,action);
+   // Explicit canonical condition is a stronger decision aid than prose
+   // inference. Never manufacture a criterion from an unrelated sentence.
+   const condition=reviewCalendar.condition?.(card.desc);
+   if(condition?.explicit&&!condition.ambiguous){
+    const line=make('p','decision-condition');
+    line.append(make('strong','','確認条件'),document.createTextNode(condition.text));
+    box.append(line);
+   }
+   if(!compact){
+    box.append(make('p','decision-status','現在地｜'+(item.status||'記載・読取要確認')));
+   }
+   if(item.stepCaution)box.append(make('p','decision-caution',item.stepCaution));
+   const more=make('details','decision-more');
+   more.append(make('summary','',compact?'現在地・詳細を表示':'現在地の詳細・カード説明を表示'));
+   const evidence=make('div','decision-evidence');
+   if(compact)evidence.append(make('p','','現在地｜'+(item.status||'記載・読取要確認')));
+   if(item.owner)evidence.append(make('p','','ボール｜'+item.owner));
+   evidence.append(make('p','','リスト｜'+(card.listName||'リスト不明')));
+   evidence.append(make('div','decision-evidence-label','Trelloカードの説明（原文）'));
+   evidence.append(make('pre','decision-full-description',card.desc||'説明はありません'));
+   more.append(evidence);
+   box.append(more);
+   target.append(box);
+   return box;
   };
   if(spotlight.length){
-   const group=document.createElement('section');group.className='decision-group';
-   const heading=document.createElement('h2');heading.textContent='優先度が高い・確認日が到来（'+spotlight.length+'件）';
-   group.append(heading);
+   const group=make('section','decision-group');
+   group.id='decision-spotlight';
+   group.append(make('h2','','先に確認・判断する候補（'+spotlight.length+'件）'));
+   group.append(make('p','decision-group-note',
+    '確認日が到来した案件、または優先度が高い案件です。確認日の到来は仕事の遅延・未実施を意味しません。'));
    for(const item of spotlight)renderItem(item,group);
    out.append(group);
   }
   if(further.length){
+   // Keep the lower-priority actions visible as a short scannable list,
+   // instead of hiding seven full-sized cards behind a collapsed accordion.
    const details=document.createElement('details');details.className='decision-other';
-   details.open=!spotlight.length;
-   const summary=document.createElement('summary');
-   summary.textContent='その他の次の行動 '+further.length+'件'+(spotlight.length?'（クリックで展開）':'');
+   details.open=true;details.id='decision-other-actions';
+   const summary=make('summary','','その他の行動候補（'+further.length+'件）');
    details.append(summary);
-   for(const item of further)renderItem(item,details);
+   details.append(make('p','decision-group-note',
+    '優先度や次の一手を一覧し、必要な行だけ現在地・説明原文を展開できます。'));
+   const tools=make('div','decision-tools');
+   const search=document.createElement('input');
+   search.type='search';search.placeholder='カード名・次の一手を検索';
+   search.setAttribute('aria-label','その他の行動候補を検索');
+   const priority=document.createElement('select');
+   priority.setAttribute('aria-label','その他の行動候補の優先度絞り込み');
+   for(const [value,label] of [['all','すべての優先度'],['soon','早め'],['normal','通常']]){
+    const option=document.createElement('option');option.value=value;option.textContent=label;
+    priority.append(option);
+   }
+   priority.value='all';
+   const count=make('span','decision-filter-count');
+   tools.append(search,priority,count);
+   const list=make('div','decision-compact-list');
+   const rows=further.map(item=>({item,node:renderItem(item,list,true)}));
+   const empty=make('p','decision-empty','該当する行動候補はありません。');
+   empty.hidden=true;
+   const filter=()=>{
+    const query=search.value.trim().toLocaleLowerCase('ja-JP');
+    let visible=0;
+    for(const {item,node} of rows){
+     const haystack=[item.card.name,item.step,item.status,item.owner,item.card.listName]
+      .filter(Boolean).join(' ').toLocaleLowerCase('ja-JP');
+     const match=(priority.value==='all'||priority.value===item.priority)&&
+      (!query||haystack.includes(query));
+     node.hidden=!match;if(match)visible++;
+    }
+    count.textContent=visible+'／'+rows.length+'件表示';
+    empty.hidden=visible!==0;
+   };
+   search.addEventListener('input',filter);
+   priority.addEventListener('change',filter);
+   filter();
+   details.append(tools,list,empty);
    out.append(details);
   }
  }catch(_){
