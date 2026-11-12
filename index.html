@@ -32,14 +32,22 @@
       return data.ball||null;
     }
 
-    function badgeFor(description) {
-      const ball = readBall(description);
-      if (!ball) return [];
-      const chars = Array.from(ball);
-      const shortBall = chars.length > 12
-        ? chars.slice(0, 11).join('') + '…'
-        : ball;
-      return [{ text: '👤 ' + shortBall, color: 'light-gray' }];
+    // The actor's name remains private card data, never a public runtime constant.
+    // Only explicitly self-directed non-recurring cards use the blue owner badge.
+    function selfBall(description,labels) {
+      const timing=window.KoyoriNextReviewCore;
+      if(!readBall(description)||!timing||typeof timing.actionKind!=='function'||
+         !Array.isArray(labels)||labels.some(x=>x&&x.name==='保留'))return false;
+      const action=timing.actionKind(description,labels);
+      return !action.invalid&&action.kind==='Act'&&!action.recurring;
+    }
+
+    function badgeFor(description,labels) {
+      const ball=readBall(description);
+      if(!ball)return [];
+      const chars=Array.from(ball);
+      const shortBall=chars.length>12?chars.slice(0,11).join('')+'…':ball;
+      return [{text:'👤 '+shortBall,color:selfBall(description,labels)?'blue':'light-gray'}];
     }
 
 
@@ -71,8 +79,8 @@
       // Keep their canonical timing badge, but never duplicate a validated
       // native priority label with the old priority icon.
       if(!kind.kind&&!kind.recurring)
-        return badgeFor(card.desc).concat(timingBadgesFor(card.desc));
-      return badgeFor(card.desc).concat(timing.actionBadge(card.desc,card.labels,new Date()));
+        return badgeFor(card.desc,card.labels).concat(timingBadgesFor(card.desc));
+      return badgeFor(card.desc,card.labels).concat(timing.actionBadge(card.desc,card.labels,new Date()));
     }
 
     // The board-local Trello idShort is read-only, not a second identifier store.
@@ -202,7 +210,7 @@
             const staged=migratedFrontBadges(card);
             if(staged!==null)return staged;
             return priorityBadgesFor(card&&card.name,saved,card&&card.desc,readOK)
-              .concat(badgeFor(card&&card.desc),timingBadgesFor(card&&card.desc));
+              .concat(badgeFor(card&&card.desc,card&&card.labels),timingBadgesFor(card&&card.desc));
           })
           .catch(function() { return []; });
       },
@@ -245,7 +253,8 @@
           readPriorityState(t).catch(function() { return null; }),
           t.card('id','idShort','desc')
             .catch(function() { return t.card('desc').catch(function() { return null; }); }),
-          t.card('checklists').catch(function() { return null; })
+          t.card('checklists').catch(function() { return null; }),
+          t.card('labels').catch(function() { return null; })
         ]).then(function(values) {
           const current=values[0],card=values[1];
           const priority=current?{
@@ -260,7 +269,8 @@
           // Trello controls responsive row wrapping; this API cannot force hard rows.
           // Reuse the same description parser already used by the card-front ball badge.
           const ball=haveDesc&&window.KoyoriTopSummaryCore?
-            window.KoyoriTopSummaryCore.ownerBadge(readBall(card.desc),taskFieldsPopup):[];
+            window.KoyoriTopSummaryCore.ownerBadge(readBall(card.desc),taskFieldsPopup)
+              .map(x=>selfBall(card.desc,values[3]&&values[3].labels)?Object.assign({},x,{color:'blue'}):x):[];
           const badges=haveDesc&&window.KoyoriTopSummaryCore?
             window.KoyoriTopSummaryCore.badges(card.desc,taskFieldsPopup):[];
           const checklistData=values[2];
