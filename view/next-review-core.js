@@ -155,7 +155,7 @@
   choices.sort((a,b)=>a.date.localeCompare(b.date)||a.rank-b.rank);
   const next=choices[0]||null;
   if(!mode.kind&&!mode.recurring)return [];
-  if(!next&&mode.recurring)return [{text:'-/- 定常',color:'light-gray'}];
+  if(!next&&mode.recurring)return [{text:'-/- 定常',color:'sky'}];
   if(!next)return mode.kind?[{text:'?/? '+mode.kind,color:'purple'}]:[];
   const day=next.date.split('-'),today=todayLocal(now);
   // A recurring card with an explicit date but no confirmed next actor
